@@ -5,7 +5,7 @@ import Principal "mo:base/Principal";
 import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
-// import Cycles "mo:base/ExperimentalCycles";
+import Cycles "mo:base/ExperimentalCycles";
 import Oracle "./oracle";
 import Auction "./auction";
 
@@ -42,11 +42,10 @@ actor MarketMakerBot {
     price : Float;
   };
 
-  var bidOrderId : Nat = 0;
-  var askOrderId : Nat = 0;
-  let spread: Float = 0.05; // 5 percent
+  var spreadValue: Float = 0.05; // 5 percent
 
   let auction : Auction.Self = actor "2qfpd-kyaaa-aaaao-a3pka-cai";
+  let oracle : Oracle.Self = actor "yoizw-hyaaa-aaaab-qacea-cai";
   // let oracle : Oracle.Self = actor "uf6dk-hyaaa-aaaaq-qaaaq-cai";
 
   let quote : AssetInfo = {
@@ -60,36 +59,37 @@ actor MarketMakerBot {
     decimals = 3;
   };
 
+  public func getSpreadPercent() : async (Nat) {
+    Int.abs(Float.toInt(spreadValue * 100));
+  };
+
+  public func setSpreadPercent(value : Nat) : async (Float) {
+    spreadValue := Float.fromInt(value) / 100;
+    spreadValue;
+  };
+
   public func getCurrentRate(base: Oracle.Asset, quote: Oracle.Asset) : async CurrencyRate {
-    // Temporary hardcoded rate
-    let currencyRate : CurrencyRate = {
-      rate = 9_856_521_536;
-      decimals = 9;
+    let request: Oracle.GetExchangeRateRequest = {
+      timestamp = null;
+      quote_asset = quote;
+      base_asset = base;
     };
+    Cycles.add<system>(10_000_000_000);
+    let response = await oracle.get_exchange_rate(request);
 
-    return currencyRate;
+    switch (response) {
+      case (#Ok(success)) {
+        let currencyRate : CurrencyRate = {
+          rate = success.rate;
+          decimals = success.metadata.decimals;
+        };
 
-    // let request: Oracle.GetExchangeRateRequest = {
-    //   timestamp = null;
-    //   quote_asset = quote;
-    //   base_asset = base;
-    // };
-    // Cycles.add<system>(10_000_000_000);
-    // let response = await oracle.get_exchange_rate(request);
-
-    // switch (response) {
-    //   case (#Ok(success)) {
-    //     let currencyRate : CurrencyRate = {
-    //       rate = success.rate;
-    //       decimals = success.metadata.decimals;
-    //     };
-
-    //     return currencyRate;
-    //   };
-    //   case (#Err(_)) {
-    //     throw Error.reject("Error get rates");
-    //   };
-    // }
+        return currencyRate;
+      };
+      case (#Err(_)) {
+        throw Error.reject("Error get rates");
+      };
+    }
   };
 
   public func getPrices(spread : Float, currencyRate : CurrencyRate) : async PricesInfo {
@@ -118,9 +118,9 @@ actor MarketMakerBot {
 
     for (credit in credits.vals()) {
       if (credit.0 == base) {
-        baseCredit := credit.1.available;
+        baseCredit := credit.1.total;
       } else if (credit.0 == quote) {
-        quoteCredit := credit.1.available;
+        quoteCredit := credit.1.total;
       }
     };
 
@@ -128,16 +128,6 @@ actor MarketMakerBot {
       baseCredit = baseCredit;
       quoteCredit = quoteCredit;
     }
-  };
-
-  func cancelOrders(bidOrderId : Nat, askOrderId : Nat) : async* () {
-      if (bidOrderId != 0) {
-        ignore await auction.cancelBids([bidOrderId]);
-      };
-
-      if (askOrderId != 0) {
-        ignore await auction.cancelAsks([askOrderId]);
-      };
   };
 
   func replaceOrders(bid : OrderInfo, ask : OrderInfo) : async* [Nat] {
@@ -157,10 +147,9 @@ actor MarketMakerBot {
   };
 
   public func marketMaking() : async [Nat] {
-    await* cancelOrders(bidOrderId, askOrderId);
     let { baseCredit; quoteCredit } = await queryCredits(base.principal, quote.principal);
     let currentRate : CurrencyRate = await getCurrentRate(base.asset, quote.asset);
-    let { bidPrice; askPrice } = await getPrices(spread, currentRate);
+    let { bidPrice; askPrice } = await getPrices(spreadValue, currentRate);
     let { bidVolume; askVolume } = await getVolumes({ baseCredit; quoteCredit }, { bidPrice; askPrice });
 
     let bidOrder : OrderInfo = {
@@ -175,9 +164,6 @@ actor MarketMakerBot {
     };
 
     let orders = await* replaceOrders(bidOrder, askOrder);
-
-    askOrderId := orders[0];
-    bidOrderId := orders[1];
 
     orders;
   };
