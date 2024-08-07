@@ -1,176 +1,196 @@
-import Error "mo:base/Error";
+import Array "mo:base/Array";
 import Timer "mo:base/Timer";
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
-import Int "mo:base/Int";
-import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
-import Cycles "mo:base/ExperimentalCycles";
-import Oracle "./oracle";
-import Auction "./auction";
+import Debug "mo:base/Debug";
+import MarketMakerModule "./market_maker";
+import HistoryModule "./history";
 
 actor MarketMakerBot {
-  type CurrencyRate = {
-    rate : Nat64;
+  public type AssetData = {
+    principal : Text;
+    symbol : Text;
     decimals : Nat32;
   };
 
-  type CreditsInfo = {
-    baseCredit : Nat;
-    quoteCredit : Nat;
-  };
-
-  type PricesInfo = {
-    bidPrice : Float;
-    askPrice : Float;
-  };
-
-  type ValumesInfo = {
-    bidVolume : Nat;
-    askVolume : Nat;
-  };
-
-  public type AssetInfo = {
-    principal : Principal;
-    asset : Oracle.Asset;
-    decimals : Nat32;
-  };
-
-  public type OrderInfo = {
-    token : Principal;
-    amount : Nat;
-    price : Float;
-  };
-
-  var spreadValue: Float = 0.05; // 5 percent
-
-  let auction : Auction.Self = actor "2qfpd-kyaaa-aaaao-a3pka-cai";
-  let oracle : Oracle.Self = actor "yoizw-hyaaa-aaaab-qacea-cai";
-  // let oracle : Oracle.Self = actor "uf6dk-hyaaa-aaaaq-qaaaq-cai";
-
-  let quote : AssetInfo = {
-    principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_0
-    asset = { class_ = #Cryptocurrency; symbol = "USDC"};
-    decimals = 3;
-  };
-  let base : AssetInfo = {
-    principal = Principal.fromText("5pli6-taaaa-aaaaa-aaaaa-aaaaa-aaaaa-ae"); // TKN_4
-    asset = { class_ = #Cryptocurrency; symbol = "ICP"};
-    decimals = 3;
-  };
-
-  public func getSpreadPercent() : async (Nat) {
-    Int.abs(Float.toInt(spreadValue * 100));
-  };
-
-  public func setSpreadPercent(value : Nat) : async (Float) {
-    spreadValue := Float.fromInt(value) / 100;
-    spreadValue;
-  };
-
-  public func getCurrentRate(base: Oracle.Asset, quote: Oracle.Asset) : async CurrencyRate {
-    let request: Oracle.GetExchangeRateRequest = {
-      timestamp = null;
-      quote_asset = quote;
-      base_asset = base;
+  let default_pair : MarketMakerModule.MarketPair = {
+    quote = {
+      principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_0
+      asset = { class_ = #Cryptocurrency; symbol = "USDC" };
+      decimals = 3;
     };
-    Cycles.add<system>(10_000_000_000);
-    let response = await oracle.get_exchange_rate(request);
-
-    switch (response) {
-      case (#Ok(success)) {
-        let currencyRate : CurrencyRate = {
-          rate = success.rate;
-          decimals = success.metadata.decimals;
-        };
-
-        return currencyRate;
-      };
-      case (#Err(_)) {
-        throw Error.reject("Error get rates");
-      };
-    }
+    base = {
+      principal = Principal.fromText("5pli6-taaaa-aaaaa-aaaaa-aaaaa-aaaaa-ae"); // TKN_4
+      asset = { class_ = #Cryptocurrency; symbol = "ICP" };
+      decimals = 3;
+    };
+    spread_value = 0.05;
   };
 
-  public func getPrices(spread : Float, currencyRate : CurrencyRate) : async PricesInfo {
-    let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currencyRate.decimals)));
-    let floatPrice : Float = Float.fromInt64(Int64.fromNat64(currencyRate.rate)) / Float.pow(Float.fromInt(10), exponent);
-    let bidPrice = floatPrice * (1.0 - spread);
-    let askPrice = floatPrice * (1.0 + spread);
+  var market_makers : [MarketMakerModule.MarketMaker] = [MarketMakerModule.MarketMaker(default_pair)];
+  var history : [HistoryModule.HistoryItem] = [];
 
+  func shareData() : ([MarketMakerModule.MarketPair]) {
+    Array.tabulate(
+      market_makers.size(),
+      func(i: Nat) : MarketMakerModule.MarketPair = market_makers[i].getPair()
+    );
+  };
+
+  func unshareData(arr : [MarketMakerModule.MarketPair]) : () {
+    market_makers := Array.tabulate(
+      arr.size(),
+      func(i: Nat) : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(arr[i])
+    );
+  };
+
+  system func preupgrade() {
+    market_makers_data := shareData();
+    Debug.print("Preupgrade" # debug_show(market_makers_data));
+  };
+
+  system func postupgrade() {
+    Debug.print("Postupgrade" # debug_show(market_makers_data));
+    unshareData(market_makers_data);
+  };
+
+  stable var market_makers_data : [MarketMakerModule.MarketPair] = shareData();
+
+  func getAssetInfo(asset_data : AssetData) : (MarketMakerModule.AssetInfo) {
     {
-      bidPrice = bidPrice;
-      askPrice = askPrice;
-    }
+      principal = Principal.fromText(asset_data.principal);
+      asset = { class_ = #Cryptocurrency; symbol = asset_data.symbol };
+      decimals = asset_data.decimals;
+    };
   };
 
-  public func getVolumes(credits : CreditsInfo, prices : PricesInfo) : async ValumesInfo {
+  func getMarketPair(base_asset_info : MarketMakerModule.AssetInfo, quote_asset_info : MarketMakerModule.AssetInfo, spread_value : Float) : (MarketMakerModule.MarketPair) {
     {
-      bidVolume = Int.abs(Float.toInt(Float.fromInt(credits.quoteCredit) / prices.bidPrice));
-      askVolume = credits.baseCredit;
+      base = base_asset_info;
+      quote = quote_asset_info;
+      spread_value = spread_value;
     }
   };
 
-  public func queryCredits(base : Principal, quote : Principal) : async CreditsInfo {
-    let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
-    var baseCredit : Nat = 0;
-    var quoteCredit : Nat = 0;
+  func getErrorMessage(error : MarketMakerModule.ExecutionError) : Text {
+    switch (error) {
+      case (#PlacementError) "Placement order error";
+      case (#CancellationError) "Cancellation order error";
+      case (#UnknownPrincipal) "Unknown principal error";
+      case (#RatesError) "No rates error";
+      case (#ConflictOrderError) "Conflict order error";
+      case (#UnknownAssetError) "Unknown asset error";
+      case (#NoCreditError) "No credit error";
+      case (#TooLowOrderError) "Too low order error";
+    }
+  };
 
-    for (credit in credits.vals()) {
-      if (credit.0 == base) {
-        baseCredit := credit.1.total;
-      } else if (credit.0 == quote) {
-        quoteCredit := credit.1.total;
+  public func addPair(base_asset_data : AssetData, quote_asset_data : AssetData, spread_value : Float) : async (Nat) {
+    let base_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(base_asset_data);
+    let quote_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(quote_asset_data);
+    let market_pair : MarketMakerModule.MarketPair = getMarketPair(base_asset_info, quote_asset_info, spread_value);
+    let market_maker : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(market_pair);
+    let size = market_makers.size();
+
+    market_makers := Array.tabulate(
+      size + 1,
+      func(i: Nat) : MarketMakerModule.MarketMaker {
+        if (i < size) {
+          return market_makers[i];
+        } else {
+          return market_maker;
+        }
       }
-    };
-
-    {
-      baseCredit = baseCredit;
-      quoteCredit = quoteCredit;
-    }
-  };
-
-  func replaceOrders(bid : OrderInfo, ask : OrderInfo) : async* [Nat] {
-    let response = await auction.manageOrders(
-      ?(#all (?[bid.token, ask.token])), // cancell all orders for tokens
-      [#bid (bid.token, bid.amount, bid.price), #ask (ask.token, ask.amount, ask.price)],
     );
 
-    switch (response) {
-      case (#Ok(success)) {
-        return success;
-      };
-      case (#Err(_)) {
-        throw Error.reject("Error placing orders");
-      };
-    }
+    market_makers.size();
   };
 
-  public func marketMaking() : async [Nat] {
-    let { baseCredit; quoteCredit } = await queryCredits(base.principal, quote.principal);
-    let currentRate : CurrencyRate = await getCurrentRate(base.asset, quote.asset);
-    let { bidPrice; askPrice } = await getPrices(spreadValue, currentRate);
-    let { bidVolume; askVolume } = await getVolumes({ baseCredit; quoteCredit }, { bidPrice; askPrice });
+  public func getPairsList() : async ([MarketMakerModule.MarketPair]) {
+    let size = market_makers.size();
 
-    let bidOrder : OrderInfo = {
-      token = base.principal;
-      amount = bidVolume;
-      price = bidPrice;
+    Array.tabulate<MarketMakerModule.MarketPair>(
+      size,
+      func(i: Nat) : MarketMakerModule.MarketPair = market_makers[i].getPair()
+    );
+  };
+
+  public func removePairByIndex(idx : Nat) : async {
+    #Ok : Nat;
+    #Err : {
+      #CancellationError;
     };
-    let askOrder : OrderInfo = {
-      token = base.principal;
-      amount = askVolume;
-      price = askPrice;
+  } {
+    let size = market_makers.size();
+    let market_pair_to_remove : MarketMakerModule.MarketMaker = market_makers[idx];
+
+    ignore await market_pair_to_remove.removeOrders();
+
+    if (idx >= size) {
+      return #Ok(market_makers.size());
     };
 
-    let orders = await* replaceOrders(bidOrder, askOrder);
+    if (idx == 0) {
+      market_makers := Array.tabulate(
+        size - 1,
+        func(i: Nat) : MarketMakerModule.MarketMaker = market_makers[i + 1]
+      );
+    } else {
+      let begin : [MarketMakerModule.MarketMaker] = Array.tabulate(
+        idx,
+        func(i: Nat) : MarketMakerModule.MarketMaker = market_makers[i]
+      );
+      let end : [MarketMakerModule.MarketMaker] = Array.tabulate(
+        size - idx - 1,
+        func(i: Nat) : MarketMakerModule.MarketMaker = market_makers[idx + i + 1]
+      );
+      market_makers := Array.append<MarketMakerModule.MarketMaker>(begin, end);
+    };
 
-    orders;
+    return #Ok(market_makers.size());
+  };
+
+  public func getHistory() : async ([Text]) {
+    let size = history.size();
+    Array.tabulate<Text>(
+      size,
+      func(i: Nat) : Text = history[i].getItem()
+    );
   };
 
   func executeMarketMaking() : async () {
-    ignore await marketMaking();
+    var i : Nat = 0;
+    while (i < market_makers.size()) {
+      let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
+      let execute_result = await market_maker.execute();
+
+      switch (execute_result) {
+        case (#Ok(bid_order, ask_order)) {
+          let historyItem = HistoryModule.HistoryItem(market_maker.getPair(), bid_order, ask_order, "OK");
+          history := Array.append(
+            history,
+            [historyItem],
+          );
+          Debug.print(historyItem.getItem());
+        };
+        case (#Err(err)) {
+          let empty_order : MarketMakerModule.OrderInfo = {
+            amount = 0;
+            price = 0.0;
+          };
+          let historyItem = HistoryModule.HistoryItem(market_maker.getPair(), empty_order, empty_order, getErrorMessage(err));
+          history := Array.append(
+            history,
+            [historyItem],
+          );
+          Debug.print(historyItem.getItem());
+        };
+      };
+
+      i := i + 1;
+    }
   };
 
-  Timer.recurringTimer<system>(#seconds (5 * 60 * 1000), executeMarketMaking);
+  Timer.recurringTimer<system>(#seconds (5), executeMarketMaking);
 }
