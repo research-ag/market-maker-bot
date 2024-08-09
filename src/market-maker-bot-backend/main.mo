@@ -4,8 +4,15 @@ import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Nat32 "mo:base/Nat32";
 import Debug "mo:base/Debug";
+import Error "mo:base/Error";
+import HashMap "mo:base/HashMap";
+import Option "mo:base/Option";
+import Text "mo:base/Text";
+import Oracle "./oracle";
+import Auction "./auction";
 import MarketMakerModule "./market_maker";
 import HistoryModule "./history";
+import MarketMaker "market_maker";
 
 actor MarketMakerBot {
   public type AssetData = {
@@ -16,19 +23,26 @@ actor MarketMakerBot {
 
   let default_pair : MarketMakerModule.MarketPair = {
     quote = {
-      principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_0
-      asset = { class_ = #Cryptocurrency; symbol = "USDC" };
+      principal = Principal.fromText("avqkn-guaaa-aaaaa-qaaea-cai"); // TKN_0
+      asset = { class_ = #Cryptocurrency; symbol = "MCK_2" };
       decimals = 3;
     };
     base = {
-      principal = Principal.fromText("5pli6-taaaa-aaaaa-aaaaa-aaaaa-aaaaa-ae"); // TKN_4
-      asset = { class_ = #Cryptocurrency; symbol = "ICP" };
+      principal = Principal.fromText("by6od-j4aaa-aaaaa-qaadq-cai"); // TKN_4
+      asset = { class_ = #Cryptocurrency; symbol = "MCK_1" };
       decimals = 3;
     };
     spread_value = 0.05;
   };
 
-  var market_makers : [MarketMakerModule.MarketMaker] = [MarketMakerModule.MarketMaker(default_pair)];
+  var credits_map : HashMap.HashMap<Principal, Nat> = HashMap.HashMap<Principal, Nat>(0, Principal.equal, Principal.hash);
+
+  let auction : Auction.Self = actor "br5f7-7uaaa-aaaaa-qaaca-cai";
+  // let auction : Auction.Self = actor "2qfpd-kyaaa-aaaao-a3pka-cai";
+  let oracle : Oracle.Self = actor "a4tbr-q4aaa-aaaaa-qaafq-cai";
+  // let oracle : Oracle.Self = actor "uf6dk-hyaaa-aaaaq-qaaaq-cai";
+
+  var market_makers : [MarketMakerModule.MarketMaker] = [MarketMakerModule.MarketMaker(default_pair, oracle, auction)];
   var history : [HistoryModule.HistoryItem] = [];
 
   func shareData() : ([MarketMakerModule.MarketPair]) {
@@ -41,7 +55,7 @@ actor MarketMakerBot {
   func unshareData(arr : [MarketMakerModule.MarketPair]) : () {
     market_makers := Array.tabulate(
       arr.size(),
-      func(i: Nat) : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(arr[i])
+      func(i: Nat) : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(arr[i], oracle, auction)
     );
   };
 
@@ -86,11 +100,20 @@ actor MarketMakerBot {
     }
   };
 
+  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) : () {
+    let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, message);
+    history := Array.append(
+      history,
+      [historyItem],
+    );
+    Debug.print(historyItem.getItem());
+  };
+
   public func addPair(base_asset_data : AssetData, quote_asset_data : AssetData, spread_value : Float) : async (Nat) {
     let base_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(base_asset_data);
     let quote_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(quote_asset_data);
     let market_pair : MarketMakerModule.MarketPair = getMarketPair(base_asset_info, quote_asset_info, spread_value);
-    let market_maker : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(market_pair);
+    let market_maker : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(market_pair, oracle, auction);
     let size = market_makers.size();
 
     market_makers := Array.tabulate(
@@ -125,7 +148,7 @@ actor MarketMakerBot {
     let size = market_makers.size();
     let market_pair_to_remove : MarketMakerModule.MarketMaker = market_makers[idx];
 
-    ignore await market_pair_to_remove.removeOrders();
+    ignore await* market_pair_to_remove.removeOrders();
 
     if (idx >= size) {
       return #Ok(market_makers.size());
@@ -159,33 +182,54 @@ actor MarketMakerBot {
     );
   };
 
+  func getCredits(token : Principal) : async* (Nat) {
+    let _credits : ?Nat = credits_map.get(token);
+    switch (_credits) {
+      case (?_credits) _credits;
+      case (null) {
+        throw Error.reject("Empty credits for token" # Principal.toText(token));
+      };
+    }
+  };
+
   func executeMarketMaking() : async () {
     var i : Nat = 0;
+    let empty_order : MarketMakerModule.OrderInfo = {
+      amount = 0;
+      price = 0.0;
+    };
+
+    let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
+
+    Debug.print("Query credist result " # debug_show(credits));
+
+    credits_map := HashMap.HashMap<Principal, Nat>(credits.size(), Principal.equal, Principal.hash);
+
+    for (credit in credits.vals()) {
+      credits_map.put(credit.0, credit.1.total);
+    };
+
     while (i < market_makers.size()) {
       let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
-      let execute_result = await market_maker.execute();
+      let pair : MarketMakerModule.MarketPair = market_maker.getPair();
 
-      switch (execute_result) {
-        case (#Ok(bid_order, ask_order)) {
-          let historyItem = HistoryModule.HistoryItem(market_maker.getPair(), bid_order, ask_order, "OK");
-          history := Array.append(
-            history,
-            [historyItem],
-          );
-          Debug.print(historyItem.getItem());
+      try {
+        let credits : MarketMakerModule.CreditsInfo = {
+          base_credit = await* getCredits(pair.base.principal);
+          quote_credit = await* getCredits(pair.quote.principal);
         };
-        case (#Err(err)) {
-          let empty_order : MarketMakerModule.OrderInfo = {
-            amount = 0;
-            price = 0.0;
+        let execute_result = await* market_maker.execute(credits);
+
+        switch (execute_result) {
+          case (#Ok(bid_order, ask_order)) {
+            addHistoryItem(pair, bid_order, ask_order, "OK");
           };
-          let historyItem = HistoryModule.HistoryItem(market_maker.getPair(), empty_order, empty_order, getErrorMessage(err));
-          history := Array.append(
-            history,
-            [historyItem],
-          );
-          Debug.print(historyItem.getItem());
+          case (#Err(err)) {
+            addHistoryItem(pair, empty_order, empty_order, getErrorMessage(err));
+          };
         };
+      } catch (e) {
+        addHistoryItem(pair, empty_order, empty_order, "Error processing pair: " # Error.message(e));
       };
 
       i := i + 1;
