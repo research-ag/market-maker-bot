@@ -4,6 +4,7 @@ import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Cycles "mo:base/ExperimentalCycles";
+import Debug "mo:base/Debug";
 import Oracle "./oracle";
 import Auction "./auction";
 
@@ -11,11 +12,6 @@ module MarketMakerModule {
   type CurrencyRate = {
     rate : Nat64;
     decimals : Nat32;
-  };
-
-  type CreditsInfo = {
-    base_credit : Nat;
-    quote_credit : Nat;
   };
 
   type PricesInfo = {
@@ -26,6 +22,11 @@ module MarketMakerModule {
   type ValumesInfo = {
     bid_volume : Nat;
     ask_volume : Nat;
+  };
+
+  public type CreditsInfo = {
+    base_credit : Nat;
+    quote_credit : Nat;
   };
 
   public type OrderInfo = {
@@ -56,12 +57,7 @@ module MarketMakerModule {
     #TooLowOrderError;
   };
 
-  let auction : Auction.Self = actor "br5f7-7uaaa-aaaaa-qaaca-cai";
-  // let auction : Auction.Self = actor "2qfpd-kyaaa-aaaao-a3pka-cai";
-  let oracle : Oracle.Self = actor "a4tbr-q4aaa-aaaaa-qaafq-cai";
-  // let oracle : Oracle.Self = actor "uf6dk-hyaaa-aaaaq-qaaaq-cai";
-
-  public class MarketMaker(pair : MarketPair) {
+  public class MarketMaker(pair : MarketPair, xrc : Oracle.Self, ac : Auction.Self) {
     func getCurrentRate(base: Oracle.Asset, quote: Oracle.Asset) : async* {
       #Ok : CurrencyRate;
       #Err : {
@@ -74,7 +70,7 @@ module MarketMakerModule {
         base_asset = base;
       };
       Cycles.add<system>(10_000_000_000);
-      let response = await oracle.get_exchange_rate(request);
+      let response = await xrc.get_exchange_rate(request);
 
       switch (response) {
         case (#Ok(success)) {
@@ -91,9 +87,9 @@ module MarketMakerModule {
       }
     };
 
-    func getPrices(spread : Float, currency_rate : CurrencyRate) : async* PricesInfo {
+    func getPrices(spread : Float, currency_rate : CurrencyRate) : PricesInfo {
       let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currency_rate.decimals)));
-      let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(Float.fromInt(10), exponent);
+      let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(10, exponent);
 
       {
         bid_price = float_price * (1.0 - spread);
@@ -101,29 +97,10 @@ module MarketMakerModule {
       }
     };
 
-    func getVolumes(credits : CreditsInfo, prices : PricesInfo) : async* ValumesInfo {
+    func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
       {
         bid_volume = Int.abs(Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price));
         ask_volume = credits.base_credit;
-      }
-    };
-
-    func queryCredits(base : Principal, quote : Principal) : async* CreditsInfo {
-      let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
-      var base_credit : Nat = 0;
-      var quote_credit : Nat = 0;
-
-      for (credit in credits.vals()) {
-        if (credit.0 == base) {
-          base_credit := credit.1.total;
-        } else if (credit.0 == quote) {
-          quote_credit := credit.1.total;
-        }
-      };
-
-      {
-        base_credit = base_credit;
-        quote_credit = quote_credit;
       }
     };
 
@@ -131,7 +108,7 @@ module MarketMakerModule {
       #Ok : [Nat];
       #Err : Auction.ManageOrdersError;
     } {
-      let response = await auction.manageOrders(
+      let response = await ac.manageOrders(
         ?(#all (?[token])), // cancell all orders for tokens
         [#bid (token, bid.amount, bid.price), #ask (token, ask.amount, ask.price)],
       );
@@ -142,7 +119,7 @@ module MarketMakerModule {
         case (#Err(error)) {
           switch (error) {
             case (#cancellation(_)) {
-              let response = await auction.manageOrders(
+              let response = await ac.manageOrders(
                 ?(#orders ([])),
                 [#bid (token, bid.amount, bid.price), #ask (token, ask.amount, ask.price)],
               );
@@ -158,17 +135,18 @@ module MarketMakerModule {
       }
     };
 
-    public func execute() : async {
+    public func execute(credits: CreditsInfo) : async* {
       #Ok: (OrderInfo, OrderInfo);
       #Err : ExecutionError;
     } {
-      let { base_credit; quote_credit } = await* queryCredits(pair.base.principal, pair.quote.principal);
+      // let { base_credit; quote_credit } = await* queryCredits(pair.base.principal, pair.quote.principal);
+      let { base_credit; quote_credit } = credits;
       let current_rate_result = await* getCurrentRate(pair.base.asset, pair.quote.asset);
 
       switch (current_rate_result) {
         case (#Ok(current_rate)) {
-          let { bid_price; ask_price } = await* getPrices(pair.spread_value, current_rate);
-          let { bid_volume; ask_volume } = await* getVolumes({ base_credit; quote_credit }, { bid_price; ask_price });
+          let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate);
+          let { bid_volume; ask_volume } = getVolumes({ base_credit; quote_credit }, { bid_price; ask_price });
 
           let bid_order : OrderInfo = {
             amount = bid_volume;
@@ -207,13 +185,13 @@ module MarketMakerModule {
       }
     };
 
-    public func removeOrders() : async {
+    public func removeOrders() : async* {
       #Ok;
       #Err : {
         #CancellationError;
       };
     } {
-      let response = await auction.manageOrders(
+      let response = await ac.manageOrders(
         ?(#all (?[pair.base.principal])), // cancell all orders for tokens
         [],
       );
