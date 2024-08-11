@@ -6,19 +6,35 @@ import Nat32 "mo:base/Nat32";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import HashMap "mo:base/HashMap";
-import Option "mo:base/Option";
 import Text "mo:base/Text";
+import Bool "mo:base/Bool";
 import Oracle "./oracle";
 import Auction "./auction";
 import MarketMakerModule "./market_maker";
 import HistoryModule "./history";
-import MarketMaker "market_maker";
 
 actor MarketMakerBot {
   public type AssetData = {
     principal : Text;
     symbol : Text;
     decimals : Nat32;
+  };
+
+  public type BotState = {
+    running : Bool;
+  };
+
+  public type AssetInfoWithCredits = {
+    principal : Principal;
+    symbol : Text;
+    decimals : Nat32;
+    credits : Nat;
+  };
+
+  public type MarketPairWithCredits = {
+    base : AssetInfoWithCredits;
+    quote : AssetInfoWithCredits;
+    spread_value: Float;
   };
 
   let default_pair : MarketMakerModule.MarketPair = {
@@ -44,6 +60,7 @@ actor MarketMakerBot {
 
   var market_makers : [MarketMakerModule.MarketMaker] = [MarketMakerModule.MarketMaker(default_pair, oracle, auction)];
   var history : [HistoryModule.HistoryItem] = [];
+  var is_running : Bool = false;
 
   func shareData() : ([MarketMakerModule.MarketPair]) {
     Array.tabulate(
@@ -61,14 +78,17 @@ actor MarketMakerBot {
 
   system func preupgrade() {
     market_makers_data := shareData();
+    bot_running_state := is_running;
     Debug.print("Preupgrade" # debug_show(market_makers_data));
   };
 
   system func postupgrade() {
     Debug.print("Postupgrade" # debug_show(market_makers_data));
     unshareData(market_makers_data);
+    is_running := bot_running_state;
   };
 
+  stable var bot_running_state : Bool = is_running;
   stable var market_makers_data : [MarketMakerModule.MarketPair] = shareData();
 
   func getAssetInfo(asset_data : AssetData) : (MarketMakerModule.AssetInfo) {
@@ -109,6 +129,32 @@ actor MarketMakerBot {
     Debug.print(historyItem.getItem());
   };
 
+  func getCreditsByToken(token : Principal) : (Nat) {
+    let _credits : ?Nat = credits_map.get(token);
+    switch (_credits) {
+      case (?_credits) _credits;
+      case (null) 0;
+    }
+  };
+
+  func queryCredits() : async* () {
+    let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
+
+    credits_map := HashMap.HashMap<Principal, Nat>(credits.size(), Principal.equal, Principal.hash);
+
+    for (credit in credits.vals()) {
+      credits_map.put(credit.0, credit.1.total);
+    };
+  };
+
+  func setBotState(running : Bool) : async* (BotState) {
+    is_running := running;
+
+    {
+      running = is_running;
+    };
+  };
+
   public func addPair(base_asset_data : AssetData, quote_asset_data : AssetData, spread_value : Float) : async (Nat) {
     let base_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(base_asset_data);
     let quote_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(quote_asset_data);
@@ -130,12 +176,32 @@ actor MarketMakerBot {
     market_makers.size();
   };
 
-  public func getPairsList() : async ([MarketMakerModule.MarketPair]) {
+  public func getPairsList() : async ([MarketPairWithCredits]) {
     let size = market_makers.size();
 
-    Array.tabulate<MarketMakerModule.MarketPair>(
+    await* queryCredits();
+
+    Array.tabulate<MarketPairWithCredits>(
       size,
-      func(i: Nat) : MarketMakerModule.MarketPair = market_makers[i].getPair()
+      func(i: Nat) : MarketPairWithCredits {
+        let pair = market_makers[i].getPair();
+
+        {
+          base = {
+            principal = pair.base.principal;
+            symbol = pair.base.asset.symbol;
+            decimals = pair.base.decimals;
+            credits = getCreditsByToken(pair.base.principal);
+          };
+          quote = {
+            principal = pair.quote.principal;
+            symbol = pair.quote.asset.symbol;
+            decimals = pair.quote.decimals;
+            credits = getCreditsByToken(pair.quote.principal);
+          };
+          spread_value = pair.spread_value;
+        };
+      }
     );
   };
 
@@ -182,41 +248,49 @@ actor MarketMakerBot {
     );
   };
 
-  func getCredits(token : Principal) : async* (Nat) {
-    let _credits : ?Nat = credits_map.get(token);
-    switch (_credits) {
-      case (?_credits) _credits;
-      case (null) {
-        throw Error.reject("Empty credits for token" # Principal.toText(token));
-      };
-    }
+  public func startBot() : async (BotState) {
+    Debug.print("Start auto trading");
+    await* setBotState(true);
   };
 
-  func executeMarketMaking() : async () {
+  public func stopBot() : async (BotState) {
+    Debug.print("Stop auto trading");
+    await* setBotState(false);
+  };
+
+  public func getBotState() : async (BotState) {
+    {
+      running = is_running;
+    };
+  };
+
+  public func executeMarketMaking() : async () {
     var i : Nat = 0;
     let empty_order : MarketMakerModule.OrderInfo = {
       amount = 0;
       price = 0.0;
     };
 
-    let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
-
-    Debug.print("Query credist result " # debug_show(credits));
-
-    credits_map := HashMap.HashMap<Principal, Nat>(credits.size(), Principal.equal, Principal.hash);
-
-    for (credit in credits.vals()) {
-      credits_map.put(credit.0, credit.1.total);
-    };
+    await* queryCredits();
 
     while (i < market_makers.size()) {
       let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
       let pair : MarketMakerModule.MarketPair = market_maker.getPair();
 
       try {
+        let base_credit = getCreditsByToken(pair.base.principal);
+        if (base_credit == 0) {
+          throw Error.reject("Empty credits for " # Principal.toText(pair.base.principal));
+        };
+
+        let quote_credit = getCreditsByToken(pair.quote.principal);
+        if (quote_credit == 0) {
+          throw Error.reject("Empty credits for " # Principal.toText(pair.quote.principal));
+        };
+
         let credits : MarketMakerModule.CreditsInfo = {
-          base_credit = await* getCredits(pair.base.principal);
-          quote_credit = await* getCredits(pair.quote.principal);
+          base_credit = base_credit;
+          quote_credit = quote_credit;
         };
         let execute_result = await* market_maker.execute(credits);
 
@@ -236,5 +310,13 @@ actor MarketMakerBot {
     }
   };
 
-  Timer.recurringTimer<system>(#seconds (5), executeMarketMaking);
+  func executeBot() : async () {
+    if (is_running == false) {
+      return;
+    };
+
+    await executeMarketMaking();
+  };
+
+  Timer.recurringTimer<system>(#seconds (5), executeBot);
 }
