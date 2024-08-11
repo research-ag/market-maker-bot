@@ -3,6 +3,16 @@
     "market-maker-bot-backend": {
       "main": "src/market-maker-bot-backend/main.mo",
       "type": "motoko"
+    },
+    "market-maker-bot-frontend": {
+      "dependencies": [
+        "market-maker-bot-backend"
+      ],
+      "source": [
+        "src/market-maker-bot-frontend/dist"
+      ],
+      "type": "assets",
+      "workspace": "market-maker-bot-frontend"
     }
   },
   "defaults": {
