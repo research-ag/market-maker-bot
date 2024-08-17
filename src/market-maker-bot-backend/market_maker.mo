@@ -140,8 +140,19 @@ module MarketMakerModule {
       #Err : ExecutionError;
     } {
       // let { base_credit; quote_credit } = await* queryCredits(pair.base.principal, pair.quote.principal);
+      var current_rate_result : {
+        #Ok : CurrencyRate;
+        #Err : {
+          #ErrorGetRates;
+        }
+      } = #Err(#ErrorGetRates);
       let { base_credit; quote_credit } = credits;
-      let current_rate_result = await* getCurrentRate(pair.base.asset, pair.quote.asset);
+      try {
+        current_rate_result := await* getCurrentRate(pair.base.asset, pair.quote.asset);
+      } catch (_) {
+        ignore await* removeOrders();
+        return #Err(#RatesError);
+      };
 
       switch (current_rate_result) {
         case (#Ok(current_rate)) {
@@ -162,6 +173,7 @@ module MarketMakerModule {
           switch (replace_orders_result) {
             case (#Ok(_)) #Ok(bid_order, ask_order);
             case (#Err(err)) {
+              ignore await* removeOrders();
               switch (err) {
                 case (#placement(err)) {
                   switch (err.error) {
@@ -178,6 +190,7 @@ module MarketMakerModule {
           }
         };
         case (#Err(err)) {
+          ignore await* removeOrders();
           switch (err) {
             case (#ErrorGetRates) #Err(#RatesError);
           }
@@ -191,14 +204,18 @@ module MarketMakerModule {
         #CancellationError;
       };
     } {
-      let response = await ac.manageOrders(
-        ?(#all (?[pair.base.principal])), // cancell all orders for tokens
-        [],
-      );
+      try {
+        let response = await ac.manageOrders(
+          ?(#all (?[pair.base.principal])), // cancell all orders for tokens
+          [],
+        );
 
-      switch (response) {
-        case (#Ok(_)) #Ok;
-        case (#Err(_)) #Err(#CancellationError);
+        switch (response) {
+          case (#Ok(_)) #Ok;
+          case (#Err(_)) #Err(#CancellationError);
+        }
+      } catch (_) {
+        return #Err(#CancellationError);
       }
     };
 

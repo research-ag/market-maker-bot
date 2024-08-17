@@ -138,13 +138,18 @@ actor MarketMakerBot {
   };
 
   func queryCredits() : async* () {
-    let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
+    try {
+      let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
 
-    credits_map := HashMap.HashMap<Principal, Nat>(credits.size(), Principal.equal, Principal.hash);
+      Debug.print("credits" # debug_show(credits));
+      credits_map := HashMap.HashMap<Principal, Nat>(credits.size(), Principal.equal, Principal.hash);
 
-    for (credit in credits.vals()) {
-      credits_map.put(credit.0, credit.1.total);
-    };
+      for (credit in credits.vals()) {
+        credits_map.put(credit.0, credit.1.total);
+      };
+    } catch (e) {
+      Debug.print(Error.message(e));
+    }
   };
 
   func setBotState(running : Bool) : async* (BotState) {
@@ -279,29 +284,31 @@ actor MarketMakerBot {
 
       try {
         let base_credit = getCreditsByToken(pair.base.principal);
-        if (base_credit == 0) {
-          throw Error.reject("Empty credits for " # Principal.toText(pair.base.principal));
-        };
-
         let quote_credit = getCreditsByToken(pair.quote.principal);
-        if (quote_credit == 0) {
-          throw Error.reject("Empty credits for " # Principal.toText(pair.quote.principal));
-        };
-
-        let credits : MarketMakerModule.CreditsInfo = {
-          base_credit = base_credit;
-          quote_credit = quote_credit;
-        };
-        let execute_result = await* market_maker.execute(credits);
-
-        switch (execute_result) {
-          case (#Ok(bid_order, ask_order)) {
-            addHistoryItem(pair, bid_order, ask_order, "OK");
+        if (base_credit == 0 or quote_credit == 0) {
+          if (base_credit == 0) {
+            addHistoryItem(pair, empty_order, empty_order, "Error processing pair: no credits for " # Principal.toText(pair.base.principal));
           };
-          case (#Err(err)) {
-            addHistoryItem(pair, empty_order, empty_order, getErrorMessage(err));
+          if (quote_credit == 0) {
+            addHistoryItem(pair, empty_order, empty_order, "Error processing pair: no credits for " # Principal.toText(pair.quote.principal));
           };
-        };
+        } else {
+          let credits : MarketMakerModule.CreditsInfo = {
+            base_credit = base_credit;
+            quote_credit = quote_credit;
+          };
+          let execute_result = await* market_maker.execute(credits);
+
+          switch (execute_result) {
+            case (#Ok(bid_order, ask_order)) {
+              addHistoryItem(pair, bid_order, ask_order, "OK");
+            };
+            case (#Err(err)) {
+              addHistoryItem(pair, empty_order, empty_order, getErrorMessage(err));
+            };
+          };
+        }
+
       } catch (e) {
         addHistoryItem(pair, empty_order, empty_order, "Error processing pair: " # Error.message(e));
       };
