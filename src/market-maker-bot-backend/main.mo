@@ -126,7 +126,7 @@ actor MarketMakerBot {
       history,
       [historyItem],
     );
-    Debug.print(historyItem.getItem());
+    Debug.print(historyItem.getText());
   };
 
   func getCreditsByToken(token : Principal) : (Nat) {
@@ -244,7 +244,7 @@ actor MarketMakerBot {
     let size = history.size();
     Array.tabulate<Text>(
       size,
-      func(i: Nat) : Text = history[i].getItem()
+      func(i: Nat) : Text = history[i].getText()
     );
   };
 
