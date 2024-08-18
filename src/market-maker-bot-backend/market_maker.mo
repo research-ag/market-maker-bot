@@ -4,7 +4,6 @@ import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Cycles "mo:base/ExperimentalCycles";
-import Debug "mo:base/Debug";
 import Oracle "./oracle";
 import Auction "./auction";
 
@@ -34,15 +33,15 @@ module MarketMakerModule {
     price : Float;
   };
 
-  public type AssetInfo = {
+  public type Asset = {
     principal : Principal;
-    asset : Oracle.Asset;
+    symbol : Text;
     decimals : Nat32;
   };
 
-  public type MarketPair = {
-    base : AssetInfo;
-    quote : AssetInfo;
+  public type Pair = {
+    base : Asset;
+    quote : Asset;
     spread_value: Float;
   };
 
@@ -57,8 +56,8 @@ module MarketMakerModule {
     #TooLowOrderError;
   };
 
-  public class MarketMaker(pair : MarketPair, xrc : Oracle.Self, ac : Auction.Self) {
-    func getCurrentRate(base: Oracle.Asset, quote: Oracle.Asset) : async* {
+  public class MarketMaker(pair : Pair, xrc : Oracle.Self, ac : Auction.Self) {
+    func getCurrentRate(baseSymbol: Text, quoteSymbol: Text) : async* {
       #Ok : CurrencyRate;
       #Err : {
         #ErrorGetRates;
@@ -66,8 +65,8 @@ module MarketMakerModule {
     } {
       let request: Oracle.GetExchangeRateRequest = {
         timestamp = null;
-        quote_asset = quote;
-        base_asset = base;
+        quote_asset = { class_ = #Cryptocurrency; symbol = quoteSymbol };
+        base_asset = { class_ = #Cryptocurrency; symbol = baseSymbol };
       };
       Cycles.add<system>(10_000_000_000);
       let response = await xrc.get_exchange_rate(request);
@@ -148,7 +147,7 @@ module MarketMakerModule {
       } = #Err(#ErrorGetRates);
       let { base_credit; quote_credit } = credits;
       try {
-        current_rate_result := await* getCurrentRate(pair.base.asset, pair.quote.asset);
+        current_rate_result := await* getCurrentRate(pair.base.symbol, pair.quote.symbol);
       } catch (_) {
         ignore await* removeOrders();
         return #Err(#RatesError);
@@ -219,7 +218,7 @@ module MarketMakerModule {
       }
     };
 
-    public func getPair() : (MarketPair) {
+    public func getPair() : (Pair) {
       pair;
     }
   }

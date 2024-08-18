@@ -14,62 +14,55 @@ import MarketMakerModule "./market_maker";
 import HistoryModule "./history";
 
 actor MarketMakerBot {
-  public type AssetData = {
-    principal : Text;
-    symbol : Text;
-    decimals : Nat32;
-  };
-
   public type BotState = {
     running : Bool;
   };
 
-  public type AssetInfoWithCredits = {
-    principal : Principal;
-    symbol : Text;
-    decimals : Nat32;
-    credits : Nat;
-  };
-
-  public type MarketPairWithCredits = {
-    base : AssetInfoWithCredits;
-    quote : AssetInfoWithCredits;
+  public type PairInfo = {
+    base_asset : MarketMakerModule.Asset;
+    base_credits : Nat;
+    quote_asset : MarketMakerModule.Asset;
+    quote_credits : Nat;
     spread_value: Float;
   };
 
-  let default_pair : MarketMakerModule.MarketPair = {
-    quote = {
-      principal = Principal.fromText("avqkn-guaaa-aaaaa-qaaea-cai"); // TKN_0
-      asset = { class_ = #Cryptocurrency; symbol = "MCK_2" };
-      decimals = 3;
-    };
-    base = {
-      principal = Principal.fromText("by6od-j4aaa-aaaaa-qaadq-cai"); // TKN_4
-      asset = { class_ = #Cryptocurrency; symbol = "MCK_1" };
-      decimals = 3;
-    };
-    spread_value = 0.05;
+  var quote_asset : MarketMakerModule.Asset = {
+    principal = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab"); // TKN_0
+    symbol = "TKN_0";
+    decimals = 3;
   };
+
+  // let default_pair : MarketMakerModule.Pair = {
+  //   quote = {
+  //     principal = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab"); // TKN_0
+  //     symbol = "MCK_2";
+  //     decimals = 3;
+  //   };
+  //   base = {
+  //     principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_4
+  //     symbol = "MCK_1";
+  //     decimals = 3;
+  //   };
+  //   spread_value = 0.05;
+  // };
 
   var credits_map : HashMap.HashMap<Principal, Nat> = HashMap.HashMap<Principal, Nat>(0, Principal.equal, Principal.hash);
 
-  let auction : Auction.Self = actor "br5f7-7uaaa-aaaaa-qaaca-cai";
-  // let auction : Auction.Self = actor "2qfpd-kyaaa-aaaao-a3pka-cai";
+  let auction : Auction.Self = actor "b77ix-eeaaa-aaaaa-qaada-cai";
   let oracle : Oracle.Self = actor "a4tbr-q4aaa-aaaaa-qaafq-cai";
-  // let oracle : Oracle.Self = actor "uf6dk-hyaaa-aaaaq-qaaaq-cai";
 
-  var market_makers : [MarketMakerModule.MarketMaker] = [MarketMakerModule.MarketMaker(default_pair, oracle, auction)];
+  var market_makers : [MarketMakerModule.MarketMaker] = [];
   var history : [HistoryModule.HistoryItem] = [];
   var is_running : Bool = false;
 
-  func shareData() : ([MarketMakerModule.MarketPair]) {
+  func shareData() : ([MarketMakerModule.Pair]) {
     Array.tabulate(
       market_makers.size(),
-      func(i: Nat) : MarketMakerModule.MarketPair = market_makers[i].getPair()
+      func(i: Nat) : MarketMakerModule.Pair = market_makers[i].getPair()
     );
   };
 
-  func unshareData(arr : [MarketMakerModule.MarketPair]) : () {
+  func unshareData(arr : [MarketMakerModule.Pair]) : () {
     market_makers := Array.tabulate(
       arr.size(),
       func(i: Nat) : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(arr[i], oracle, auction)
@@ -89,23 +82,7 @@ actor MarketMakerBot {
   };
 
   stable var bot_running_state : Bool = is_running;
-  stable var market_makers_data : [MarketMakerModule.MarketPair] = shareData();
-
-  func getAssetInfo(asset_data : AssetData) : (MarketMakerModule.AssetInfo) {
-    {
-      principal = Principal.fromText(asset_data.principal);
-      asset = { class_ = #Cryptocurrency; symbol = asset_data.symbol };
-      decimals = asset_data.decimals;
-    };
-  };
-
-  func getMarketPair(base_asset_info : MarketMakerModule.AssetInfo, quote_asset_info : MarketMakerModule.AssetInfo, spread_value : Float) : (MarketMakerModule.MarketPair) {
-    {
-      base = base_asset_info;
-      quote = quote_asset_info;
-      spread_value = spread_value;
-    }
-  };
+  stable var market_makers_data : [MarketMakerModule.Pair] = shareData();
 
   func getErrorMessage(error : MarketMakerModule.ExecutionError) : Text {
     switch (error) {
@@ -120,7 +97,7 @@ actor MarketMakerBot {
     }
   };
 
-  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) : () {
+  func addHistoryItem(pair : MarketMakerModule.Pair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) : () {
     let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, message);
     history := Array.append(
       history,
@@ -160,10 +137,17 @@ actor MarketMakerBot {
     };
   };
 
-  public func addPair(base_asset_data : AssetData, quote_asset_data : AssetData, spread_value : Float) : async (Nat) {
-    let base_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(base_asset_data);
-    let quote_asset_info : MarketMakerModule.AssetInfo = getAssetInfo(quote_asset_data);
-    let market_pair : MarketMakerModule.MarketPair = getMarketPair(base_asset_info, quote_asset_info, spread_value);
+  public func addPair(principal : Text, symbol : Text, decimals : Nat32, spread_value : Float) : async (Nat) {
+    let base_asset : MarketMakerModule.Asset = {
+      principal = Principal.fromText(principal); // TKN_0
+      symbol = symbol;
+      decimals = decimals;
+    };
+    let market_pair : MarketMakerModule.Pair = {
+      base = base_asset;
+      quote = quote_asset;
+      spread_value = spread_value;
+    };
     let market_maker : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(market_pair, oracle, auction);
     let size = market_makers.size();
 
@@ -181,29 +165,21 @@ actor MarketMakerBot {
     market_makers.size();
   };
 
-  public func getPairsList() : async ([MarketPairWithCredits]) {
+  public func getPairsList() : async ([PairInfo]) {
     let size = market_makers.size();
 
     await* queryCredits();
 
-    Array.tabulate<MarketPairWithCredits>(
+    Array.tabulate<PairInfo>(
       size,
-      func(i: Nat) : MarketPairWithCredits {
+      func(i: Nat) : PairInfo {
         let pair = market_makers[i].getPair();
 
         {
-          base = {
-            principal = pair.base.principal;
-            symbol = pair.base.asset.symbol;
-            decimals = pair.base.decimals;
-            credits = getCreditsByToken(pair.base.principal);
-          };
-          quote = {
-            principal = pair.quote.principal;
-            symbol = pair.quote.asset.symbol;
-            decimals = pair.quote.decimals;
-            credits = getCreditsByToken(pair.quote.principal);
-          };
+          base_asset = pair.base;
+          base_credits = getCreditsByToken(pair.base.principal);
+          quote_asset = pair.base;
+          quote_credits = getCreditsByToken(pair.quote.principal);
           spread_value = pair.spread_value;
         };
       }
@@ -269,6 +245,38 @@ actor MarketMakerBot {
     };
   };
 
+  public func setQuoteAsset(principal : Text, symbol : Text, decimals : Nat32) : async () {
+    var i : Nat = 0;
+    let size = market_makers.size();
+
+    quote_asset := {
+      principal = Principal.fromText(principal);
+      symbol = symbol;
+      decimals = decimals;
+    };
+
+    ignore market_makers := Array.tabulate<MarketMakerModule.MarketMaker>(
+      size,
+      func(i: Nat) : async MarketMakerModule.MarketMaker {
+        let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
+        let pair = market_maker.getPair();
+        ignore await* market_maker.removeOrders();
+        let new_pair : MarketMakerModule.Pair = {
+          base = pair.base;
+          quote = quote_asset;
+          spread_value = pair.spread_value;
+        };
+
+        MarketMakerModule.MarketMaker(new_pair, oracle, auction);
+      }
+    );
+  };
+
+  public func getQuoteAsset() : async (MarketMakerModule.Asset) {
+    Debug.print("Get quote asset");
+    quote_asset;
+  };
+
   public func executeMarketMaking() : async () {
     var i : Nat = 0;
     let empty_order : MarketMakerModule.OrderInfo = {
@@ -280,7 +288,7 @@ actor MarketMakerBot {
 
     while (i < market_makers.size()) {
       let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
-      let pair : MarketMakerModule.MarketPair = market_maker.getPair();
+      let pair : MarketMakerModule.Pair = market_maker.getPair();
 
       try {
         let base_credit = getCreditsByToken(pair.base.principal);
@@ -317,10 +325,19 @@ actor MarketMakerBot {
     }
   };
 
+  public func addCredits() : async () {
+    ignore await auction.icrc84_notify({ token = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa")});
+    ignore await auction.icrc84_notify({ token = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab")});
+    ignore await auction.icrc84_notify({ token = Principal.fromText("owzbv-3yaaa-aaaaa-aaaaa-aaaaa-aaaaa-ad")});
+    ignore await auction.icrc84_notify({ token = Principal.fromText("ak2su-6iaaa-aaaaa-aaaaa-aaaaa-aaaaa-ac")});
+  };
+
   func executeBot() : async () {
     if (is_running == false) {
       return;
     };
+
+    await addCredits();
 
     await executeMarketMaking();
   };
