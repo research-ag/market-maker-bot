@@ -27,9 +27,9 @@ actor MarketMakerBot {
   };
 
   var quote_asset : MarketMakerModule.Asset = {
-    principal = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab"); // TKN_0
+    principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_0
     symbol = "TKN_0";
-    decimals = 3;
+    decimals = 6;
   };
 
   // let default_pair : MarketMakerModule.Pair = {
@@ -137,16 +137,16 @@ actor MarketMakerBot {
     };
   };
 
-  public func addPair(principal : Text, symbol : Text, decimals : Nat32, spread_value : Float) : async (Nat) {
+  public func addPair(params : { principal : Text; symbol : Text; decimals : Nat32; spread_value : Float }) : async (Nat) {
     let base_asset : MarketMakerModule.Asset = {
-      principal = Principal.fromText(principal); // TKN_0
-      symbol = symbol;
-      decimals = decimals;
+      principal = Principal.fromText(params.principal); // TKN_0
+      symbol = params.symbol;
+      decimals = params.decimals;
     };
     let market_pair : MarketMakerModule.Pair = {
       base = base_asset;
       quote = quote_asset;
-      spread_value = spread_value;
+      spread_value = params.spread_value;
     };
     let market_maker : MarketMakerModule.MarketMaker = MarketMakerModule.MarketMaker(market_pair, oracle, auction);
     let size = market_makers.size();
@@ -167,6 +167,7 @@ actor MarketMakerBot {
 
   public func getPairsList() : async ([PairInfo]) {
     let size = market_makers.size();
+    Debug.print("Market pairs count" # debug_show(size));
 
     await* queryCredits();
 
@@ -174,6 +175,7 @@ actor MarketMakerBot {
       size,
       func(i: Nat) : PairInfo {
         let pair = market_makers[i].getPair();
+        Debug.print("Market pair" # debug_show(pair));
 
         {
           base_asset = pair.base;
@@ -245,22 +247,28 @@ actor MarketMakerBot {
     };
   };
 
-  public func setQuoteAsset(principal : Text, symbol : Text, decimals : Nat32) : async () {
+  public func setQuoteAsset(params : { principal : Text; symbol : Text; decimals : Nat32 }) : async () {
     var i : Nat = 0;
     let size = market_makers.size();
 
     quote_asset := {
-      principal = Principal.fromText(principal);
-      symbol = symbol;
-      decimals = decimals;
+      principal = Principal.fromText(params.principal);
+      symbol = params.symbol;
+      decimals = params.decimals;
     };
 
-    ignore market_makers := Array.tabulate<MarketMakerModule.MarketMaker>(
+    while (i < size) {
+      let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
+      ignore await* market_maker.removeOrders();
+
+      i := i + 1;
+    };
+
+    market_makers := Array.tabulate(
       size,
-      func(i: Nat) : async MarketMakerModule.MarketMaker {
+      func(i: Nat) : MarketMakerModule.MarketMaker {
         let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
         let pair = market_maker.getPair();
-        ignore await* market_maker.removeOrders();
         let new_pair : MarketMakerModule.Pair = {
           base = pair.base;
           quote = quote_asset;
