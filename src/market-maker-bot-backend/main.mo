@@ -221,11 +221,11 @@ actor MarketMakerBot {
     return #Ok(market_makers.size());
   };
 
-  public func getHistory() : async ([Text]) {
+  public func getHistory() : async ([HistoryModule.HistoryItemType]) {
     let size = history.size();
-    Array.tabulate<Text>(
+    Array.tabulate<HistoryModule.HistoryItemType>(
       size,
-      func(i: Nat) : Text = history[i].getText()
+      func(i: Nat) : HistoryModule.HistoryItemType = history[i].getItem()
     );
   };
 
