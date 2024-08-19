@@ -106,8 +106,8 @@ module MarketMakerModule {
 
     func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
       {
-        bid_volume = Int.abs(Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price));
-        ask_volume = credits.base_credit;
+        bid_volume = Int.abs(Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price)) / 100 * 100;
+        ask_volume = (credits.base_credit / 100) * 100;
       }
     };
 

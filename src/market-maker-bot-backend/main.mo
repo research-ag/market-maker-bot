@@ -21,7 +21,7 @@ import Auction "./auction";
 import MarketMakerModule "./market_maker";
 import HistoryModule "./history";
 
-actor MarketMakerBot {
+actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Principal) = self {
   public type BotState = {
     running : Bool;
   };
@@ -44,8 +44,8 @@ actor MarketMakerBot {
   var credits_map : HashMap.HashMap<Principal, Nat> = HashMap.HashMap<Principal, Nat>(0, Principal.equal, Principal.hash);
 
   // TODO change with real actor principles
-  let auction : Auction.Self = actor "b77ix-eeaaa-aaaaa-qaada-cai";
-  let oracle : Oracle.Self = actor "a4tbr-q4aaa-aaaaa-qaafq-cai";
+  let auction : Auction.Self = actor (Principal.toText(auction_principal));
+  let oracle : Oracle.Self = actor (Principal.toText(oracle_principal));
 
   var market_makers : [MarketMakerModule.MarketMaker] = [];
   var history : [HistoryModule.HistoryItem] = [];
