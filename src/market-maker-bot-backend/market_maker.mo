@@ -1,3 +1,11 @@
+/// A module which contain implementation of market maker class for one pair
+/// Contain implelemtation of manage orders for one iteration, should be called by
+/// "orchestrator" each time when we wanna put BID and ASK orders
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";

@@ -1,3 +1,11 @@
+/// A module which contain implementation of market maker orchestrationg
+/// Contain all public methods for bot which helps to manage bot state
+/// Manage list of trading pairs, have only one fixed quote asset for all pairs
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Array "mo:base/Array";
 import Timer "mo:base/Timer";
 import Float "mo:base/Float";
@@ -26,28 +34,16 @@ actor MarketMakerBot {
     spread_value: Float;
   };
 
+  // TODO change with real default asset principle
   var quote_asset : MarketMakerModule.Asset = {
     principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_0
     symbol = "TKN_0";
     decimals = 6;
   };
 
-  // let default_pair : MarketMakerModule.Pair = {
-  //   quote = {
-  //     principal = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab"); // TKN_0
-  //     symbol = "MCK_2";
-  //     decimals = 3;
-  //   };
-  //   base = {
-  //     principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_4
-  //     symbol = "MCK_1";
-  //     decimals = 3;
-  //   };
-  //   spread_value = 0.05;
-  // };
-
   var credits_map : HashMap.HashMap<Principal, Nat> = HashMap.HashMap<Principal, Nat>(0, Principal.equal, Principal.hash);
 
+  // TODO change with real actor principles
   let auction : Auction.Self = actor "b77ix-eeaaa-aaaaa-qaada-cai";
   let oracle : Oracle.Self = actor "a4tbr-q4aaa-aaaaa-qaafq-cai";
 
@@ -333,6 +329,7 @@ actor MarketMakerBot {
     }
   };
 
+  // TODO remove this later, just for Debug/tesging purposes
   public func addCredits() : async () {
     ignore await auction.icrc84_notify({ token = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa")});
     ignore await auction.icrc84_notify({ token = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab")});
@@ -345,10 +342,12 @@ actor MarketMakerBot {
       return;
     };
 
+    // TODO remove this later, just for Debug/tesging purposes
     await addCredits();
 
     await executeMarketMaking();
   };
 
+  // TODO change timer value, 5 seconds just for Debug/tesging purposes
   Timer.recurringTimer<system>(#seconds (5), executeBot);
 }

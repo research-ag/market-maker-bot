@@ -1,3 +1,9 @@
+/// A module which contain exchange rate canister definitions
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 module {
   public type Asset = { class_ : AssetClass; symbol : Text };
   public type AssetClass = { #Cryptocurrency; #FiatCurrency };

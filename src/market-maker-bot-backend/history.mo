@@ -1,3 +1,9 @@
+/// A module which contain implementation of history class and public types
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Time "mo:base/Time";
 import Text "mo:base/Text";
 import Nat "mo:base/Nat";

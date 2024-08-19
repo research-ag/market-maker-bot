@@ -1,3 +1,9 @@
+/// A module which contain auction definitions
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 module {
   public type CreditInfo = { total : Nat; locked : Nat; available : Nat };
   public type ManageOrdersError = {
