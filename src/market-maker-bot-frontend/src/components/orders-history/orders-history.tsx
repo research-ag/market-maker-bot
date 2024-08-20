@@ -11,22 +11,26 @@ export const OrdersHistory = () => {
           <col style={{ width: '50px' }} />
           <col style={{ width: '50px' }} />
           <col style={{ width: '50px' }} />
-          <col style={{ width: '200px' }} />
-          <col style={{ width: '200px' }} />
+          <col style={{ width: '100px' }} />
+          <col style={{ width: '100px' }} />
+          <col style={{ width: '100px' }} />
+          <col style={{ width: '100px' }} />
         </colgroup>
         <thead>
         <tr>
           <th>Base Token</th>
           <th>Quote Token</th>
           <th>Spread</th>
-          <th>BID</th>
-          <th>ASK</th>
+          <th>BID Volume</th>
+          <th>BID Price</th>
+          <th>ASK Volume</th>
+          <th>ASK Price</th>
         </tr>
         </thead>
         <tbody>
         {isFetching && (
           <tr>
-            <td colSpan={6}>
+            <td colSpan={7}>
               Loading...
             </td>
           </tr>
@@ -46,15 +50,21 @@ export const OrdersHistory = () => {
               {item.message === 'OK' ? (
                 <>
                   <td>
-                    {item?.bidOrder?.amount?.toString()} as {item?.bidOrder?.price}
+                    {item?.bidOrder?.amount?.toString()}
                   </td>
                   <td>
-                    {item?.askOrder?.amount?.toString()} as {item?.askOrder?.price}
+                    {item?.bidOrder?.price}
+                  </td>
+                  <td>
+                    {item?.askOrder?.amount?.toString()}
+                  </td>
+                  <td>
+                    {item?.askOrder?.price}
                   </td>
                 </>
               ) : (
                 <>
-                  <td colSpan={2}>
+                  <td colSpan={4}>
                     {item?.message}
                   </td>
                 </>
