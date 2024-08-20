@@ -21,7 +21,7 @@ import Auction "./auction";
 import MarketMakerModule "./market_maker";
 import HistoryModule "./history";
 
-actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Principal) = self {
+actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Principal, quote_asset_principal: Principal, quote_asset_decimal: Nat32, quote_asset_symbol: Text) = self {
   public type BotState = {
     running : Bool;
   };
@@ -34,16 +34,14 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
     spread_value: Float;
   };
 
-  // TODO change with real default asset principle
   var quote_asset : MarketMakerModule.Asset = {
-    principal = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"); // TKN_0
-    symbol = "TKN_0";
-    decimals = 6;
+    principal = quote_asset_principal;
+    symbol = quote_asset_symbol;
+    decimals = quote_asset_decimal;
   };
 
   var credits_map : HashMap.HashMap<Principal, Nat> = HashMap.HashMap<Principal, Nat>(0, Principal.equal, Principal.hash);
 
-  // TODO change with real actor principles
   let auction : Auction.Self = actor (Principal.toText(auction_principal));
   let oracle : Oracle.Self = actor (Principal.toText(oracle_principal));
 

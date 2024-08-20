@@ -12,6 +12,8 @@ import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Cycles "mo:base/ExperimentalCycles";
+import Nat "mo:base/Nat";
+import Debug "mo:base/Debug";
 import Oracle "./oracle";
 import Auction "./auction";
 
@@ -104,10 +106,18 @@ module MarketMakerModule {
       }
     };
 
+    func calculateVolumeStep(price : Float) : Int {
+      let p = price / Float.fromInt(10 ** 3);
+      if (p >= 1) return 1;
+      let zf = - Float.log(p) / 2.302_585_092_994_045;
+      Int.abs(10 ** Float.toInt(zf));
+    };
+
     func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
+      let volume_step = calculateVolumeStep(prices.bid_price);
       {
-        bid_volume = Int.abs(Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price)) / 100 * 100;
-        ask_volume = (credits.base_credit / 100) * 100;
+        bid_volume = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price) / volume_step) * volume_step);
+        ask_volume = Int.abs((credits.base_credit / volume_step) * volume_step);
       }
     };
 
