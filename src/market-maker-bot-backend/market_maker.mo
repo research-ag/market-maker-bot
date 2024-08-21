@@ -1,9 +1,18 @@
+/// A module which contain implementation of market maker class for one pair
+/// Contain implelemtation of manage orders for one iteration, should be called by
+/// "orchestrator" each time when we wanna put BID and ASK orders
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Cycles "mo:base/ExperimentalCycles";
+import Nat "mo:base/Nat";
 import Debug "mo:base/Debug";
 import Oracle "./oracle";
 import Auction "./auction";
@@ -34,15 +43,15 @@ module MarketMakerModule {
     price : Float;
   };
 
-  public type AssetInfo = {
+  public type Asset = {
     principal : Principal;
-    asset : Oracle.Asset;
+    symbol : Text;
     decimals : Nat32;
   };
 
-  public type MarketPair = {
-    base : AssetInfo;
-    quote : AssetInfo;
+  public type Pair = {
+    base : Asset;
+    quote : Asset;
     spread_value: Float;
   };
 
@@ -57,8 +66,8 @@ module MarketMakerModule {
     #TooLowOrderError;
   };
 
-  public class MarketMaker(pair : MarketPair, xrc : Oracle.Self, ac : Auction.Self) {
-    func getCurrentRate(base: Oracle.Asset, quote: Oracle.Asset) : async* {
+  public class MarketMaker(pair : Pair, xrc : Oracle.Self, ac : Auction.Self) {
+    func getCurrentRate(baseSymbol: Text, quoteSymbol: Text) : async* {
       #Ok : CurrencyRate;
       #Err : {
         #ErrorGetRates;
@@ -66,8 +75,8 @@ module MarketMakerModule {
     } {
       let request: Oracle.GetExchangeRateRequest = {
         timestamp = null;
-        quote_asset = quote;
-        base_asset = base;
+        quote_asset = { class_ = #Cryptocurrency; symbol = quoteSymbol };
+        base_asset = { class_ = #Cryptocurrency; symbol = baseSymbol };
       };
       Cycles.add<system>(10_000_000_000);
       let response = await xrc.get_exchange_rate(request);
@@ -97,10 +106,18 @@ module MarketMakerModule {
       }
     };
 
+    func calculateVolumeStep(price : Float) : Int {
+      let p = price / Float.fromInt(10 ** 3);
+      if (p >= 1) return 1;
+      let zf = - Float.log(p) / 2.302_585_092_994_045;
+      Int.abs(10 ** Float.toInt(zf));
+    };
+
     func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
+      let volume_step = calculateVolumeStep(prices.bid_price);
       {
-        bid_volume = Int.abs(Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price));
-        ask_volume = credits.base_credit;
+        bid_volume = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price) / volume_step) * volume_step);
+        ask_volume = Int.abs((credits.base_credit / volume_step) * volume_step);
       }
     };
 
@@ -140,8 +157,19 @@ module MarketMakerModule {
       #Err : ExecutionError;
     } {
       // let { base_credit; quote_credit } = await* queryCredits(pair.base.principal, pair.quote.principal);
+      var current_rate_result : {
+        #Ok : CurrencyRate;
+        #Err : {
+          #ErrorGetRates;
+        }
+      } = #Err(#ErrorGetRates);
       let { base_credit; quote_credit } = credits;
-      let current_rate_result = await* getCurrentRate(pair.base.asset, pair.quote.asset);
+      try {
+        current_rate_result := await* getCurrentRate(pair.base.symbol, pair.quote.symbol);
+      } catch (_) {
+        ignore await* removeOrders();
+        return #Err(#RatesError);
+      };
 
       switch (current_rate_result) {
         case (#Ok(current_rate)) {
@@ -162,6 +190,7 @@ module MarketMakerModule {
           switch (replace_orders_result) {
             case (#Ok(_)) #Ok(bid_order, ask_order);
             case (#Err(err)) {
+              ignore await* removeOrders();
               switch (err) {
                 case (#placement(err)) {
                   switch (err.error) {
@@ -178,6 +207,7 @@ module MarketMakerModule {
           }
         };
         case (#Err(err)) {
+          ignore await* removeOrders();
           switch (err) {
             case (#ErrorGetRates) #Err(#RatesError);
           }
@@ -191,18 +221,22 @@ module MarketMakerModule {
         #CancellationError;
       };
     } {
-      let response = await ac.manageOrders(
-        ?(#all (?[pair.base.principal])), // cancell all orders for tokens
-        [],
-      );
+      try {
+        let response = await ac.manageOrders(
+          ?(#all (?[pair.base.principal])), // cancell all orders for tokens
+          [],
+        );
 
-      switch (response) {
-        case (#Ok(_)) #Ok;
-        case (#Err(_)) #Err(#CancellationError);
+        switch (response) {
+          case (#Ok(_)) #Ok;
+          case (#Err(_)) #Err(#CancellationError);
+        }
+      } catch (_) {
+        return #Err(#CancellationError);
       }
     };
 
-    public func getPair() : (MarketPair) {
+    public func getPair() : (Pair) {
       pair;
     }
   }

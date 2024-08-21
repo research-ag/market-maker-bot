@@ -1,9 +1,9 @@
 import { Button } from '@mui/joy';
 
-import { useBotState, useStartBot, useStopBot } from '../../integration';
+import { useGetBotState, useStartBot, useStopBot } from '../../integration';
 
 export const ToggleBotButton = () => {
-  const { data: botState, isFetching: isStateLoading } = useBotState();
+  const { data: botState, isFetching: isStateLoading } = useGetBotState();
   const { mutate: startBot, isLoading: isStartLoading } = useStartBot();
   const { mutate: stopBot, isLoading: isStopLoading } = useStopBot();
 

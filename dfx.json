@@ -2,6 +2,11 @@
   "canisters": {
     "market-maker-bot-backend": {
       "main": "src/market-maker-bot-backend/main.mo",
+      "type": "motoko",
+      "init_arg": "(principal \"b77ix-eeaaa-aaaaa-qaada-cai\", principal \"aovwi-4maaa-aaaaa-qaagq-cai\", principal \"5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa\", 6, \"TKN_0\")"
+    },
+    "market-maker-bot-oracle": {
+      "main": "src/market-maker-bot-oracle/main.mo",
       "type": "motoko"
     },
     "market-maker-bot-frontend": {
