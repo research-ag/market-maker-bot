@@ -25,11 +25,89 @@ export const useBot = () => {
   return { bot };
 };
 
-export const useListPairs = () => {
+export const useAddPair = () => {
+  const { bot } = useBot();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  return useMutation(
+    (formObj: {
+      principal: string;
+      symbol: string;
+      decimals: number;
+      spread_value: number;
+    }) =>
+      bot.addPair({
+        principal: formObj.principal,
+        decimals: formObj.decimals,
+        symbol: formObj.symbol,
+        spread_value: formObj.spread_value,
+      }),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('getPairs');
+        enqueueSnackbar(`Pair added`, { variant: 'success' });
+      },
+      onError: err => {
+        enqueueSnackbar(`Failed to add pair: ${err}`, { variant: 'error' });
+      },
+    },
+  );
+};
+
+export const useExecuteMarketMaking = () => {
+  const { bot } = useBot();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  return useMutation(
+    () => bot.executeMarketMaking(),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('getHistory');
+      },
+      onError: (err: unknown) => {
+        enqueueSnackbar(`Failed to stop bot: ${err}`, { variant: 'error' });
+      },
+    },
+  );
+};
+
+export const useGetBotState = () => {
   const { bot } = useBot();
   const { enqueueSnackbar } = useSnackbar();
   return useQuery(
-    'getPairs',
+    'getBotState',
+    async () => {
+      return bot.getBotState();
+    },
+    {
+      onError: (err: unknown) => {
+        enqueueSnackbar(`Failed to fetch bot state: ${err}`, { variant: 'error' });
+      },
+    },
+  );
+};
+
+export const useGetHistory = () => {
+  const { bot } = useBot();
+  const { enqueueSnackbar } = useSnackbar();
+  return useQuery(
+    'getHistory',
+    async () => {
+      return bot.getHistory();
+    },
+    {
+      onError: (err: unknown) => {
+        enqueueSnackbar(`Failed to fetch history: ${err}`, { variant: 'error' });
+      },
+    },
+  );
+};
+
+export const useGetPairsList = () => {
+  const { bot } = useBot();
+  const { enqueueSnackbar } = useSnackbar();
+  return useQuery(
+    'getPairsList',
     async () => {
       return bot.getPairsList();
     },
@@ -41,23 +119,23 @@ export const useListPairs = () => {
   );
 };
 
-export const useBotState = () => {
+export const useGetQuoteAsset = () => {
   const { bot } = useBot();
   const { enqueueSnackbar } = useSnackbar();
   return useQuery(
-    'getBotState',
+    'getQuoteAsset',
     async () => {
-      return bot.getBotState();
+      return bot.getQuoteAsset();
     },
     {
       onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to fetch pabot state: ${err}`, { variant: 'error' });
+        enqueueSnackbar(`Failed to get quote asset: ${err}`, { variant: 'error' });
       },
     },
   );
 };
 
-export const useRemovePair = () => {
+export const useRemovePairByIndex = () => {
   const { bot } = useBot();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -65,11 +143,37 @@ export const useRemovePair = () => {
     (pairIndex: number) => bot.removePairByIndex(BigInt(pairIndex)),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries('getPairs');
+        queryClient.invalidateQueries('getPairsList');
         enqueueSnackbar(`Pair removed`, { variant: 'success' });
       },
       onError: (err: unknown) => {
         enqueueSnackbar(`Failed to  pair: ${err}`, { variant: 'error' });
+      },
+    },
+  );
+};
+
+export const useSetQuoteAsset = () => {
+  const { bot } = useBot();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  return useMutation(
+    (formObj: {
+      principal: string;
+      symbol: string;
+      decimals: number;
+    }) => bot.setQuoteAsset({
+      principal: formObj.principal,
+      symbol: formObj.symbol,
+      decimals: formObj.decimals,
+    }),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('getPairsList');
+        enqueueSnackbar(`Quote asset updated`, { variant: 'success' });
+      },
+      onError: (err: unknown) => {
+        enqueueSnackbar(`Failed to set quote asset: ${err}`, { variant: 'error' });
       },
     },
   );
@@ -108,75 +212,3 @@ export const useStopBot = () => {
     },
   );
 };
-
-export const useExecBot = () => {
-  const { bot } = useBot();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
-  return useMutation(
-    () => bot.stopBot(),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getBotState');
-      },
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to stop bot: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-
-export const useAddPair = () => {
-  const { bot } = useBot();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
-  return useMutation(
-    (formObj: {
-      base_principal: string;
-      base_symbol: string;
-      base_decimals: number;
-      quote_principal: string;
-      quote_symbol: string;
-      quote_decimals: number;
-      spread_value: number;
-    }) =>
-      bot.addPair({
-          principal: formObj.base_principal,
-          decimals: formObj.base_decimals,
-          symbol: formObj.base_symbol,
-        },
-        {
-          principal: formObj.quote_principal,
-          decimals: formObj.quote_decimals,
-          symbol: formObj.quote_symbol,
-        },
-        formObj.spread_value,
-      ),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getPairs');
-        enqueueSnackbar(`Pair added`, { variant: 'success' });
-      },
-      onError: err => {
-        enqueueSnackbar(`Failed to add pair: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-
-export const useOrdersHistory = () => {
-  const { bot } = useBot();
-  const { enqueueSnackbar } = useSnackbar();
-  return useQuery(
-    'getOrdersHistory',
-    async () => {
-      return bot.getHistory();
-    },
-    {
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to fetch history: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-

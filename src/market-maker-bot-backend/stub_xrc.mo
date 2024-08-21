@@ -1,3 +1,9 @@
+/// A module which contain moc implementation of exchange rate canister for test purposes
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Option "mo:base/Option";
 actor CustomXRC {
   public type Asset = { class_ : AssetClass; symbol : Text };

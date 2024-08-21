@@ -1,12 +1,12 @@
 import { Box, Button, Table } from '@mui/joy';
 
-import { useListPairs, useRemovePair } from '../../../integration';
+import { useGetPairsList, useRemovePairByIndex } from '../../../integration';
 import InfoItem from '../../root/info-item';
 import { displayWithDecimals } from '../../../utils';
 
 export const PairsTable = () => {
-  const { data: pairs, isFetching } = useListPairs();
-  const { mutate: removePair, isLoading: isRemoveLoading } = useRemovePair();
+  const { data: pairsList, isFetching } = useGetPairsList();
+  const { mutate: removePair, isLoading: isRemoveLoading } = useRemovePairByIndex();
   return (
     <Box sx={{ width: '100%', overflow: 'auto' }}>
       <Table>
@@ -32,20 +32,20 @@ export const PairsTable = () => {
             </td>
             </tr>
         )}
-        {!(isFetching || isRemoveLoading) && (pairs ?? []).map((pair: any, i: number) => {
+        {!(isFetching || isRemoveLoading) && (pairsList ?? []).map((pair: any, i: number) => {
           return (
             <tr key={i}>
               <td>
-                <InfoItem content={pair.base.symbol} withCopy={true} />
-                <InfoItem content={pair.base.principal.toText()} withCopy={true} />
-                <InfoItem content={`Decimals ${pair.base.decimals}`} />
-                <InfoItem content={`Credits ${displayWithDecimals(pair.base.credits, pair.base.decimals)}`} />
+                <InfoItem content={pair.base_asset.symbol} withCopy={true} />
+                <InfoItem content={pair.base_asset.principal.toText()} withCopy={true} />
+                <InfoItem content={`Decimals ${pair.base_asset.decimals}`} />
+                <InfoItem content={`Credits ${displayWithDecimals(pair.base_credits, pair.base_asset.decimals)}`} />
               </td>
               <td>
-                <InfoItem content={pair.quote.symbol} withCopy={true} />
-                <InfoItem content={pair.quote.principal.toText()} withCopy={true} />
-                <InfoItem content={`Decimals ${pair.quote.decimals}`} />
-                <InfoItem content={`Credits ${displayWithDecimals(pair.quote.credits, pair.quote.decimals)}`} />
+                <InfoItem content={pair.quote_asset.symbol} withCopy={true} />
+                <InfoItem content={pair.quote_asset.principal.toText()} withCopy={true} />
+                <InfoItem content={`Decimals ${pair.quote_asset.decimals}`} />
+                <InfoItem content={`Credits ${displayWithDecimals(pair.quote_credits, pair.quote_asset.decimals)}`} />
               </td>
               <td>{pair.spread_value}</td>
               <td>

@@ -4,17 +4,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z as zod } from 'zod';
 import { Box, Button, FormControl, FormLabel, Input, Modal, ModalClose, ModalDialog, Typography } from '@mui/joy';
 
-import { useAddPair } from '../../../integration';
-import { ErrorAlert } from '../../error-alert';
+import { useSetQuoteAsset } from '../../integration';
+import { ErrorAlert } from '../error-alert';
 
-interface AddPairFormValues {
+interface SetQuoteAssetFormValues {
   principal: string;
   symbol: string;
   decimals: number;
-  spread_value: number;
 }
 
-interface AddPairModalProps {
+interface SetQuoteAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
@@ -30,19 +29,14 @@ const schema = zod.object({
     .string()
     .min(0)
     .refine((value: string) => !isNaN(Number(value))),
-  spread_value: zod
-    .string()
-    .min(0)
-    .refine((value: string) => !isNaN(Number(value))),
 });
 
-export const AddPairModal = ({ isOpen, onClose }: AddPairModalProps) => {
-  const defaultValues: AddPairFormValues = useMemo(
+export const SetQuoteAssetModal = ({ isOpen, onClose }: SetQuoteAssetModalProps) => {
+  const defaultValues: SetQuoteAssetFormValues = useMemo(
     () => ({
       principal: '',
       symbol: '',
       decimals: 0,
-      spread_value: 0,
     }),
     [],
   );
@@ -51,7 +45,7 @@ export const AddPairModal = ({ isOpen, onClose }: AddPairModalProps) => {
     handleSubmit,
     control,
     reset: resetForm,
-  } = useForm<AddPairFormValues>({
+  } = useForm<SetQuoteAssetFormValues>({
     defaultValues,
     resolver: zodResolver(schema),
     mode: 'onChange',
@@ -59,12 +53,11 @@ export const AddPairModal = ({ isOpen, onClose }: AddPairModalProps) => {
 
   const { isDirty, isValid } = useFormState({ control });
 
-  const { mutate: addPair, error, isLoading, reset: resetApi } = useAddPair();
+  const { mutate: setQuoteAsset, error, isLoading, reset: resetApi } = useSetQuoteAsset();
 
-  const submit: SubmitHandler<AddPairFormValues> = data => {
+  const submit: SubmitHandler<SetQuoteAssetFormValues> = data => {
     data.decimals = Number(data.decimals);
-    data.spread_value = Number(data.spread_value);
-    addPair(data, {
+    setQuoteAsset(data, {
       onSuccess: () => {
         onClose();
       },
@@ -80,7 +73,7 @@ export const AddPairModal = ({ isOpen, onClose }: AddPairModalProps) => {
     <Modal open={isOpen} onClose={onClose}>
       <ModalDialog sx={{ width: 'calc(100% - 50px)', maxWidth: '450px' }}>
         <ModalClose />
-        <Typography level="h4">Add pair</Typography>
+        <Typography level="h4">Set quote asset</Typography>
         <form onSubmit={handleSubmit(submit)} autoComplete="off">
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Controller
@@ -125,26 +118,6 @@ export const AddPairModal = ({ isOpen, onClose }: AddPairModalProps) => {
               render={({ field, fieldState }) => (
                 <FormControl>
                   <FormLabel>Base token decimals</FormLabel>
-                  <Input
-                    type="text"
-                    variant="outlined"
-                    name={field.name}
-                    value={field.value}
-                    onChange={field.onChange}
-                    autoComplete="off"
-                    error={!!fieldState.error}
-                  />
-                </FormControl>
-              )}
-            />
-          </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Controller
-              name="spread_value"
-              control={control}
-              render={({ field, fieldState }) => (
-                <FormControl>
-                  <FormLabel>Spread value in percent</FormLabel>
                   <Input
                     type="text"
                     variant="outlined"

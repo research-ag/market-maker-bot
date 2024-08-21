@@ -1,3 +1,9 @@
+/// A module which contain implementation of price making for market maker bot
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Float "mo:base/Float";
 
 module PriceMakerModule {
