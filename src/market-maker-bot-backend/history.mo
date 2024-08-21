@@ -1,3 +1,9 @@
+/// A module which contain implementation of history class and public types
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Time "mo:base/Time";
 import Text "mo:base/Text";
 import Nat "mo:base/Nat";
@@ -6,17 +12,33 @@ import Int "mo:base/Int";
 import MarketMakerModule "./market_maker";
 
 module HistoryModule {
-  public class HistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) {
+  public type HistoryItemType = {
+    pair: MarketMakerModule.Pair;
+    bidOrder : MarketMakerModule.OrderInfo;
+    askOrder : MarketMakerModule.OrderInfo;
+    message : Text;
+  };
+
+  public class HistoryItem(pair : MarketMakerModule.Pair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) {
     let timeStamp : Time.Time = Time.now();
 
-    public func getItem() : (Text) {
+    public func getText() : (Text) {
       Text.join("", [
         Int.toText(timeStamp), ":  ",
-        pair.base.asset.symbol, ":", pair.quote.asset.symbol, " ",
+        pair.base.symbol, ":", pair.quote.symbol, " ",
         "BID ", Nat.toText(bidOrder.amount), " price ", Float.toText(bidOrder.price), ", ",
         "ASK ", Nat.toText(askOrder.amount), " price ", Float.toText(askOrder.price), ", ",
         "RESULT ", message
       ].vals());
+    };
+
+    public func getItem() : (HistoryItemType) {
+      {
+        pair = pair;
+        bidOrder = bidOrder;
+        askOrder = askOrder;
+        message = message;
+      };
     };
   }
 }
