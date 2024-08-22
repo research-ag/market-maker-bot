@@ -5,6 +5,7 @@ import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Cycles "mo:base/ExperimentalCycles";
 import Debug "mo:base/Debug";
+import Error "mo:base/Error";
 import Oracle "./oracle";
 import Auction "./auction";
 
@@ -77,16 +78,20 @@ module MarketMakerModule {
       quote_asset = quote;
       base_asset = base;
     };
+    Debug.print("EXECUTE getCurrentRate requets" # debug_show(request));
     Cycles.add<system>(10_000_000_000);
     let response = await xrc.get_exchange_rate(request);
+    Debug.print("EXECUTE getCurrentRate response" # debug_show(response));
 
     switch (response) {
       case (#Ok(success)) {
+        Debug.print("EXECUTE getCurrentRate success" # debug_show(success));
         let currency_rate : CurrencyRate = {
           rate = success.rate;
           decimals = success.metadata.decimals;
         };
 
+        Debug.print("EXECUTE getCurrentRate currency_rate" # debug_show(currency_rate));
         return #Ok(currency_rate);
       };
       case (#Err(_)) {
@@ -108,30 +113,39 @@ module MarketMakerModule {
     #Ok : [Nat];
     #Err : Auction.ManageOrdersError;
   } {
-    let response = await ac.manageOrders(
-      ?(#all(?[token])), // cancell all orders for tokens
-      [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
-    );
+    Debug.print("EXECUTE replaceOrders" # debug_show({ token; bid; ask; }));
+    try {
 
-    switch (response) {
-      case (#Ok(success)) #Ok(success);
-      case (#Err(error)) {
-        switch (error) {
-          case (#cancellation(_)) {
-            let response = await ac.manageOrders(
-              ?(#orders([])),
-              [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
-            );
+      let response = await ac.manageOrders(
+        ?(#all(?[token])), // cancell all orders for tokens
+        [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
+      );
 
-            switch (response) {
-              case (#Ok(success)) #Ok(success);
-              case (#Err(error)) #Err(error);
+      Debug.print("EXECUTE response" # debug_show(response));
+      switch (response) {
+        case (#Ok(success)) #Ok(success);
+        case (#Err(error)) {
+          Debug.print("EXECUTE response error" # debug_show(error));
+          switch (error) {
+            case (#cancellation(_)) {
+              let response = await ac.manageOrders(
+                ?(#orders([])),
+                [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
+              );
+
+              switch (response) {
+                case (#Ok(success)) #Ok(success);
+                case (#Err(error)) #Err(error);
+              };
             };
+            case (_) #Err(error);
           };
-          case (_) #Err(error);
         };
       };
-    };
+    } catch (e) {
+      Debug.print("EXECUTE replaceOrders ERROR" # Error.message(e));
+      #Err(#UnknownPrincipal);
+    }
   };
 
   func getPrices(spread : Float, currency_rate : CurrencyRate) : PricesInfo {
@@ -159,24 +173,31 @@ module MarketMakerModule {
       #Err : ExecutionError;
     } {
       // let { base_credit; quote_credit } = await* queryCredits(pair.base.principal, pair.quote.principal);
+      Debug.print("EXECUTE " # debug_show(credits) # ", pair " #debug_show(pair));
       let { base_credit; quote_credit } = credits;
       let current_rate_result = await* getCurrentRate(xrc, pair.base.asset, pair.quote.asset);
+      Debug.print("EXECUTE current_rate_result" # debug_show(current_rate_result));
 
       switch (current_rate_result) {
         case (#Ok(current_rate)) {
           let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate);
+          Debug.print("EXECUTE getPrices" # debug_show({ bid_price; ask_price }));
           let { bid_volume; ask_volume } = getVolumes({ base_credit; quote_credit }, { bid_price; ask_price });
+          Debug.print("EXECUTE getVolumes" # debug_show({ bid_volume; ask_volume }));
 
           let bid_order : OrderInfo = {
             amount = bid_volume;
             price = bid_price;
           };
+          Debug.print("EXECUTE bid_order" # debug_show(bid_order));
           let ask_order : OrderInfo = {
             amount = ask_volume;
             price = ask_price;
           };
+          Debug.print("EXECUTE ask_order" # debug_show(ask_order));
 
           let replace_orders_result = await* replaceOrders(ac, pair.base.principal, bid_order, ask_order);
+          Debug.print("EXECUTE replace_orders_result" # debug_show(replace_orders_result));
 
           switch (replace_orders_result) {
             case (#Ok(_)) #Ok(bid_order, ask_order);
