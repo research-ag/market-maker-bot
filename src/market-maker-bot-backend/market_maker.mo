@@ -148,23 +148,38 @@ module MarketMakerModule {
     }
   };
 
+  let digits : Float = 5;
+
+  func limitPrecision(x : Float) : Float {
+    let e = - Float.log(x) / 2.302_585_092_994_045;
+    let e1 = Float.floor(e) + digits;
+    Float.floor(x * 10 ** e1) * 10 ** -e1;
+  };
+
   func getPrices(spread : Float, currency_rate : CurrencyRate) : PricesInfo {
     let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currency_rate.decimals)));
     let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(10, exponent);
 
     {
-      bid_price = float_price * (1.0 - spread);
-      ask_price = float_price * (1.0 + spread);
+      bid_price = limitPrecision(float_price * (1.0 - spread));
+      ask_price = limitPrecision(float_price * (1.0 + spread));
     };
+  };
+
+  func calculateVolumeStep(price : Float) : Int {
+    let p = price / Float.fromInt(10 ** 3);
+    if (p >= 1) return 1;
+    let zf = - Float.log(p) / 2.302_585_092_994_045;
+    Int.abs(10 ** Float.toInt(zf));
   };
 
   func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
+    let volume_step = calculateVolumeStep(prices.bid_price);
     {
-      bid_volume = Int.abs(Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price));
-      ask_volume = credits.base_credit;
-    };
+      bid_volume = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price) / volume_step) * volume_step);
+      ask_volume = Int.abs((credits.base_credit / volume_step) * volume_step);
+    }
   };
-
 
   public class MarketMaker(pair : MarketPair, xrc : Oracle.Self, ac : Auction.Self) {
 
