@@ -86,6 +86,7 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
       case (#PlacementError) "Placement order error";
       case (#CancellationError) "Cancellation order error";
       case (#UnknownPrincipal) "Unknown principal error";
+      case (#UnknownError) "Unknown error";
       case (#RatesError) "No rates error";
       case (#ConflictOrderError) "Conflict order error";
       case (#UnknownAssetError) "Unknown asset error";
@@ -115,12 +116,14 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
     try {
       let credits : [(Principal, Auction.CreditInfo)] = await auction.queryCredits();
 
-      Debug.print("credits" # debug_show(credits));
+      Debug.print("Credits " # debug_show(credits));
+
       credits_map := HashMap.HashMap<Principal, Nat>(credits.size(), Principal.equal, Principal.hash);
 
       for (credit in credits.vals()) {
         credits_map.put(credit.0, credit.1.total);
       };
+
     } catch (e) {
       Debug.print(Error.message(e));
     }
@@ -175,7 +178,6 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
       size,
       func(i: Nat) : PairInfo {
         let pair = market_makers[i].getPair();
-        Debug.print("Market pair" # debug_show(pair));
 
         {
           base_asset = pair.base;
@@ -253,16 +255,18 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
       amount = 0;
       price = 0.0;
     };
+    let size = market_makers.size();
 
     await* queryCredits();
 
-    while (i < market_makers.size()) {
+    while (i < size) {
       let market_maker : MarketMakerModule.MarketMaker = market_makers[i];
       let pair : MarketMakerModule.MarketPair = market_maker.getPair();
 
       try {
         let base_credit = getCreditsByToken(pair.base.principal);
-        let quote_credit = getCreditsByToken(pair.quote.principal);
+        // Here we divide whole quote asset credit by count of pairs to place orders for all pairs
+        let quote_credit = getCreditsByToken(pair.quote.principal) / size;
         if (base_credit == 0 or quote_credit == 0) {
           if (base_credit == 0) {
             addHistoryItem(pair, empty_order, empty_order, "Error processing pair: no credits for " # Principal.toText(pair.base.principal));
@@ -275,9 +279,7 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
             base_credit = base_credit;
             quote_credit = quote_credit;
           };
-          Debug.print("Credits " # debug_show(credits));
           let execute_result = await* market_maker.execute(credits);
-          Debug.print("execute_result " # debug_show(execute_result));
 
           switch (execute_result) {
             case (#Ok(bid_order, ask_order)) {
@@ -311,7 +313,7 @@ actor class MarketMakerBot(auction_principal: Principal, oracle_principal: Princ
     };
 
     // TODO remove this later, just for Debug/tesging purposes
-    await addCredits();
+    // await addCredits();
 
     await executeMarketMaking();
   };

@@ -6,6 +6,7 @@ import Nat32 "mo:base/Nat32";
 import Cycles "mo:base/ExperimentalCycles";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
+import Int32 "mo:base/Int32";
 import Oracle "./oracle";
 import Auction "./auction";
 
@@ -51,6 +52,7 @@ module MarketMakerModule {
     #PlacementError;
     #CancellationError;
     #UnknownPrincipal;
+    #UnknownError;
     #RatesError;
     #ConflictOrderError;
     #UnknownAssetError;
@@ -78,20 +80,16 @@ module MarketMakerModule {
       quote_asset = quote;
       base_asset = base;
     };
-    Debug.print("EXECUTE getCurrentRate requets" # debug_show(request));
     Cycles.add<system>(10_000_000_000);
     let response = await xrc.get_exchange_rate(request);
-    Debug.print("EXECUTE getCurrentRate response" # debug_show(response));
 
     switch (response) {
       case (#Ok(success)) {
-        Debug.print("EXECUTE getCurrentRate success" # debug_show(success));
         let currency_rate : CurrencyRate = {
           rate = success.rate;
           decimals = success.metadata.decimals;
         };
 
-        Debug.print("EXECUTE getCurrentRate currency_rate" # debug_show(currency_rate));
         return #Ok(currency_rate);
       };
       case (#Err(_)) {
@@ -113,7 +111,6 @@ module MarketMakerModule {
     #Ok : [Nat];
     #Err : Auction.ManageOrdersError;
   } {
-    Debug.print("EXECUTE replaceOrders" # debug_show({ token; bid; ask; }));
     try {
 
       let response = await ac.manageOrders(
@@ -121,11 +118,9 @@ module MarketMakerModule {
         [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
       );
 
-      Debug.print("EXECUTE response" # debug_show(response));
       switch (response) {
         case (#Ok(success)) #Ok(success);
         case (#Err(error)) {
-          Debug.print("EXECUTE response error" # debug_show(error));
           switch (error) {
             case (#cancellation(_)) {
               let response = await ac.manageOrders(
@@ -142,9 +137,8 @@ module MarketMakerModule {
           };
         };
       };
-    } catch (e) {
-      Debug.print("EXECUTE replaceOrders ERROR" # Error.message(e));
-      #Err(#UnknownPrincipal);
+    } catch (_) {
+      #Err(#UnknownError);
     }
   };
 
@@ -156,13 +150,15 @@ module MarketMakerModule {
     Float.floor(x * 10 ** e1) * 10 ** -e1;
   };
 
-  func getPrices(spread : Float, currency_rate : CurrencyRate) : PricesInfo {
+  func getPrices(spread : Float, currency_rate : CurrencyRate, decimals_multiplicator : Int32) : PricesInfo {
     let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currency_rate.decimals)));
     let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(10, exponent);
+    // normalize the price before create the order to the smallest units of the tokens
+    let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
 
     {
-      bid_price = limitPrecision(float_price * (1.0 - spread));
-      ask_price = limitPrecision(float_price * (1.0 + spread));
+      bid_price = limitPrecision(float_price * (1.0 - spread) * Float.pow(10, multiplicator));
+      ask_price = limitPrecision(float_price * (1.0 + spread) * Float.pow(10, multiplicator));
     };
   };
 
@@ -187,32 +183,28 @@ module MarketMakerModule {
       #Ok : (OrderInfo, OrderInfo);
       #Err : ExecutionError;
     } {
-      // let { base_credit; quote_credit } = await* queryCredits(pair.base.principal, pair.quote.principal);
-      Debug.print("EXECUTE " # debug_show(credits) # ", pair " #debug_show(pair));
       let { base_credit; quote_credit } = credits;
       let current_rate_result = await* getCurrentRate(xrc, pair.base.asset, pair.quote.asset);
-      Debug.print("EXECUTE current_rate_result" # debug_show(current_rate_result));
+
+      // calculate multiplicator which help to normalize the price before create
+      // the order to the smallest units of the tokens
+      let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.base.decimals) - Int32.fromNat32(pair.quote.decimals);
 
       switch (current_rate_result) {
         case (#Ok(current_rate)) {
-          let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate);
-          Debug.print("EXECUTE getPrices" # debug_show({ bid_price; ask_price }));
+          let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
           let { bid_volume; ask_volume } = getVolumes({ base_credit; quote_credit }, { bid_price; ask_price });
-          Debug.print("EXECUTE getVolumes" # debug_show({ bid_volume; ask_volume }));
 
           let bid_order : OrderInfo = {
             amount = bid_volume;
             price = bid_price;
           };
-          Debug.print("EXECUTE bid_order" # debug_show(bid_order));
           let ask_order : OrderInfo = {
             amount = ask_volume;
             price = ask_price;
           };
-          Debug.print("EXECUTE ask_order" # debug_show(ask_order));
 
           let replace_orders_result = await* replaceOrders(ac, pair.base.principal, bid_order, ask_order);
-          Debug.print("EXECUTE replace_orders_result" # debug_show(replace_orders_result));
 
           switch (replace_orders_result) {
             case (#Ok(_)) #Ok(bid_order, ask_order);
@@ -228,6 +220,7 @@ module MarketMakerModule {
                 };
                 case (#cancellation(err)) #Err(#CancellationError);
                 case (#UnknownPrincipal) #Err(#UnknownPrincipal);
+                case (#UnknownError) #Err(#UnknownError);
               };
             };
           };
