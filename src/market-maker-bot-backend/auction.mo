@@ -17,6 +17,7 @@ module {
       index : Nat;
     };
     #UnknownPrincipal;
+    #UnknownError;
     #cancellation : { error : { #UnknownAsset; #UnknownOrder }; index : Nat };
   };
   public type NotifyResult = {

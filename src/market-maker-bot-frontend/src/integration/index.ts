@@ -119,22 +119,6 @@ export const useGetPairsList = () => {
   );
 };
 
-export const useGetQuoteAsset = () => {
-  const { bot } = useBot();
-  const { enqueueSnackbar } = useSnackbar();
-  return useQuery(
-    'getQuoteAsset',
-    async () => {
-      return bot.getQuoteAsset();
-    },
-    {
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to get quote asset: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-
 export const useRemovePairByIndex = () => {
   const { bot } = useBot();
   const queryClient = useQueryClient();
@@ -148,32 +132,6 @@ export const useRemovePairByIndex = () => {
       },
       onError: (err: unknown) => {
         enqueueSnackbar(`Failed to  pair: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-
-export const useSetQuoteAsset = () => {
-  const { bot } = useBot();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
-  return useMutation(
-    (formObj: {
-      principal: string;
-      symbol: string;
-      decimals: number;
-    }) => bot.setQuoteAsset({
-      principal: formObj.principal,
-      symbol: formObj.symbol,
-      decimals: formObj.decimals,
-    }),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getPairsList');
-        enqueueSnackbar(`Quote asset updated`, { variant: 'success' });
-      },
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to set quote asset: ${err}`, { variant: 'error' });
       },
     },
   );

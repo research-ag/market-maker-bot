@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Box, Button, Tab, TabList, Tabs } from '@mui/joy';
 
-import { canisterId, useGetQuoteAsset} from '../../integration';
+import { canisterId } from '../../integration';
 
-import { SetQuoteAssetModal } from '../set-quote-asset-modal';
 import { ToggleBotButton } from '../toggle-bot-button';
 import { ThemeButton } from '../theme-button';
 import { Pairs } from '../pairs';
@@ -13,10 +12,6 @@ import InfoItem from './info-item';
 
 const Root = () => {
   const [tabValue, setTabValue] = useState(0);
-  const [isSetQuoteAssetModalOpen, setIsSetQuoteAssetModalOpen] = useState(false);
-  const openSetQuoteAssetModal = () => setIsSetQuoteAssetModalOpen(true);
-  const closeSetQuoteAssetModal = () => setIsSetQuoteAssetModalOpen(false);
-  const { data: quoteAsset, isFetching: isLoading } = useGetQuoteAsset();
 
   return (
     <Box sx={{ width: '100%', maxWidth: '1200px', p: 4, mx: 'auto' }}>
@@ -30,14 +25,6 @@ const Root = () => {
             <ToggleBotButton />
           </Box>
         </Box>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, marginBottom: 1 }}>
-            {!isLoading ? (<>
-              <InfoItem label="Quote asset" content={`${quoteAsset?.symbol} (${quoteAsset?.principal}, decimals ${quoteAsset?.decimals})`} withCopy />
-              <Button onClick={openSetQuoteAssetModal}>Set quote asset</Button>
-            </>) : (<InfoItem label="Quote asset" content={"Loading..."} />)}
-          </Box>
-        </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
           <TabList sx={{ marginRight: 1, flexGrow: 1 }} variant="plain">
             <Tab color="neutral">Pairs</Tab>
@@ -48,7 +35,6 @@ const Root = () => {
         {tabValue === 0 && <Pairs />}
         {tabValue === 1 && <OrdersHistory />}
       </Tabs>
-      <SetQuoteAssetModal isOpen={isSetQuoteAssetModalOpen} onClose={closeSetQuoteAssetModal} />
     </Box>
   );
 };
