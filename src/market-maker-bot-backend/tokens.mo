@@ -16,9 +16,10 @@ module {
   public func getTokensInfo() : AssocList.AssocList<Principal, TokenInfo> {
     /// initialize tokens info map
     let symbolsArray : [(Principal, TokenInfo)] = [
-      (Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa"), { symbol = "TKN_0"; decimals = 6 }),
-      (Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab"), { symbol = "TKN_1"; decimals = 2 }),
-      (Principal.fromText("ak2su-6iaaa-aaaaa-aaaaa-aaaaa-aaaaa-ac"), { symbol = "TKN_2"; decimals = 4 }),
+      (Principal.fromText("xevnm-gaaaa-aaaar-qafnq-cai"), { symbol = "USDC"; decimals = 6 }),
+      (Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"), { symbol = "ICP"; decimals = 8 }),
+      (Principal.fromText("mxzaz-hqaaa-aaaar-qaada-cai"), { symbol = "BTC"; decimals = 8 }),
+      (Principal.fromText("ss2fx-dyaaa-aaaar-qacoq-cai"), { symbol = "ETH"; decimals = 18 }),
     ];
 
     var symbolsList : AssocList.AssocList<Principal, TokenInfo> = null;
