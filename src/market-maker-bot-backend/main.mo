@@ -23,7 +23,7 @@ import MarketMaker "market_maker";
 import AuctionWrapper "./auction_wrapper";
 import U "./utils";
 
-actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self {
+actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
 
   stable let auction_principal : Principal = auction_be_;
   stable let oracle_principal : Principal = oracle_be_;
@@ -43,15 +43,15 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
     if (is_initialized == false) {
       is_initialized := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      let quote_token : ?Principal = await* auction.getQuoteToken();
+      let quote_token : Principal = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       Debug.print("Quote token: " # Principal.toText(quote_token));
-      Debug.print("Supported tokens: " # debug_show(supported_tokens));
+      Debug.print("Supported tokens: " # debug_show (supported_tokens));
 
       for (token in supported_tokens.vals()) {
         if (Principal.equal(token, quote_token) == false) {
           switch (AssocList.find(tokens_info, token, Principal.equal)) {
-            case (?token_info) {
+            case (?_) {
               market_pairs := Array.append(market_pairs, [getMarketPair(token, quote_token, null)]);
             };
             case (_) {};
@@ -60,7 +60,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
       };
     } else {
       Debug.print("Bot already initialized");
-    }
+    };
   };
 
   public type BotState = {
@@ -123,7 +123,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
 
     let tokens = Array.tabulate<Principal>(
       size,
-      func(i: Nat) : Principal = market_pairs[i].base_principal,
+      func(i : Nat) : Principal = market_pairs[i].base_principal,
     );
 
     let execute_result = await* auction.removeOrders(tokens);
@@ -154,7 +154,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
     let token_credits = await* getCredits();
     Array.tabulate<MarketMaker.MarketPair>(
       size,
-      func(i: Nat) : MarketMaker.MarketPair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, token_credits),
+      func(i : Nat) : MarketMaker.MarketPair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, token_credits),
     );
   };
 
@@ -162,7 +162,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
     let size = history.size();
     Array.tabulate<HistoryModule.HistoryItemType>(
       size,
-      func(i: Nat) : HistoryModule.HistoryItemType = history[i].getItem()
+      func(i : Nat) : HistoryModule.HistoryItemType = history[i].getItem(),
     );
   };
 
@@ -215,7 +215,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
         };
       };
 
-      i := i + 1
+      i := i + 1;
     };
   };
 
@@ -228,5 +228,5 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
   };
 
   // Timer value set to 5 minutes
-  Timer.recurringTimer<system>(#seconds (300), executeBot);
-}
+  Timer.recurringTimer<system>(#seconds(300), executeBot);
+};
