@@ -29,6 +29,8 @@ module {
         return await ac.getQuoteLedger();
       } catch (e) {
         Debug.print(Error.message(e));
+        /// TODO remove the trap and return an error to decide what to do in high order function
+        /// put callback to constructor and call it here
         Prim.trap("Error get quote token");
       };
     };
@@ -38,6 +40,7 @@ module {
         return await ac.icrc84_supported_tokens();
       } catch (e) {
         Debug.print(Error.message(e));
+        /// TODO remove the trap and return an error to decide what to do in high order function
         Prim.trap("Error get supported tokens list");
       };
     };
@@ -94,14 +97,14 @@ module {
       }
     };
 
-    public func removeOrders(token : Principal) : async* {
+    public func removeOrders(tokens : [Principal]) : async* {
       #Ok;
       #Err : {
         #CancellationError;
       };
     } {
       let response = await ac.manageOrders(
-        ?(#all(?[token])), // cancell all orders for tokens
+        ?(#all(?tokens)), // cancell all orders for tokens
         [],
       );
 

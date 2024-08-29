@@ -34,12 +34,14 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
   let default_spread_value : Float = 0.05;
 
   var is_initialized : Bool = false;
-  var is_running : Bool = false;
   var market_pairs : [MarketMakerModule.MarketPair] = [];
   var history : [HistoryModule.HistoryItem] = [];
 
+  stable var is_running : Bool = false;
+
   public func init() : async () {
     if (is_initialized == false) {
+      is_initialized := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
@@ -56,8 +58,6 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
           };
         };
       };
-
-      is_initialized := true;
     } else {
       Debug.print("Bot already initialized");
     }
@@ -68,20 +68,17 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
   };
 
   system func preupgrade() {
-    bot_running_state := is_running;
     Debug.print("Preupgrade");
   };
 
   system func postupgrade() {
     Debug.print("Postupgrade");
-    is_running := bot_running_state;
     ignore Timer.setTimer<system>(#seconds (0), func(): async () {
       Debug.print("Init fired");
       await init();
     });
   };
 
-  stable var bot_running_state : Bool = is_running;
 
   func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) : () {
     let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, message);
@@ -118,26 +115,26 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
   };
 
   func cancelAllOrders() : async* () {
-    var i : Nat = 0;
     let size = market_pairs.size();
     let empty_order : MarketMakerModule.OrderInfo = {
       amount = 0;
       price = 0.0;
     };
 
-    while (i < size) {
-      let execute_result = await* auction.removeOrders(market_pairs[i].base_principal);
+    let tokens = Array.tabulate<Principal>(
+      size,
+      func(i: Nat) : Principal = market_pairs[i].base_principal,
+    );
 
-      switch (execute_result) {
-        case (#Ok) {
-          addHistoryItem(market_pairs[i], empty_order, empty_order, "ORDERS REMOVED");
-        };
-        case (#Err(err)) {
-          addHistoryItem(market_pairs[i], empty_order, empty_order, "ORDERS REMOING ERROR: " # U.getErrorMessage(err));
-        };
+    let execute_result = await* auction.removeOrders(tokens);
+
+    switch (execute_result) {
+      case (#Ok) {
+        addHistoryItem(market_pairs[0], empty_order, empty_order, "ORDERS REMOVED");
       };
-
-      i := i + 1;
+      case (#Err(err)) {
+        addHistoryItem(market_pairs[0], empty_order, empty_order, "ORDERS REMOVING ERROR: " # U.getErrorMessage(err));
+      };
     };
   };
 
@@ -222,24 +219,14 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
     };
   };
 
-  // TODO remove this later, just for Debug/tesging purposes
-  public func addCredits() : async () {
-    ignore await auction.getAuction().icrc84_notify({ token = Principal.fromText("5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa")});
-    ignore await auction.getAuction().icrc84_notify({ token = Principal.fromText("to6hx-qyaaa-aaaaa-aaaaa-aaaaa-aaaaa-ab")});
-    ignore await auction.getAuction().icrc84_notify({ token = Principal.fromText("ak2su-6iaaa-aaaaa-aaaaa-aaaaa-aaaaa-ac")});
-  };
-
   func executeBot() : async () {
     if (is_running == false) {
       return;
     };
 
-    // TODO remove this later, just for Debug/tesging purposes
-    // await addCredits();
-
     await executeMarketMaking();
   };
 
-  // TODO change timer value, 5 seconds just for Debug/tesging purposes
-  Timer.recurringTimer<system>(#seconds (5), executeBot);
+  // Timer value set to 5 minutes
+  Timer.recurringTimer<system>(#seconds (300), executeBot);
 }
