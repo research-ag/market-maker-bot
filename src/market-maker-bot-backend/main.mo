@@ -138,10 +138,23 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
+  func notifyCreditUpdates() : async* () {
+    let supported_tokens = await* auction.getSupportedTokens();
+
+    let size = supported_tokens.size();
+    var i : Nat = 0;
+
+    while (i < size) {
+      ignore await* auction.notify(supported_tokens[i]);
+      i := i + 1;
+    };
+  };
+
   func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
     /// here will be logic for calculating available credits for each pair
     /// based on the current state of the auction, quote credit limit and already placed orders
     /// temporary just simple return quote token credits divided by pairs count
+    await* notifyCreditUpdates();
     let size = market_pairs.size();
     let quote_token : Principal = await* auction.getQuoteToken();
     let token_credits : AssocList.AssocList<Principal, Nat> = await* auction.getCredits();

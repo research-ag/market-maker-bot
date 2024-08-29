@@ -113,5 +113,22 @@ module {
         case (#Err(_)) #Err(#CancellationError);
       };
     };
+
+    public func notify(token : Principal) : async* {
+      #Ok;
+      #Err;
+    } {
+      try {
+        let response = await ac.icrc84_notify({ token });
+
+        switch (response) {
+          case (#Ok(_)) #Ok;
+          case (#Err(_)) #Err;
+        };
+      } catch (e) {
+        Debug.print(Error.message(e));
+        #Err;
+      }
+    };
   }
 }
