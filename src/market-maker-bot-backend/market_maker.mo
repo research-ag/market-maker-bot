@@ -1,21 +1,22 @@
+/// A module which contain implementation of market maker execution
+/// Contain public execute function which is require pair information, oracle and auction wrapper instances
+/// also contain all necessary types and functions to calculate prices and volumes
+///
+/// Copyright: 2023-2024 MR Research AG
+/// Main author: Dmitriy Panchenko
+/// Contributors: Timo Hanke
+
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
 import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
-import Cycles "mo:base/ExperimentalCycles";
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
 import Int32 "mo:base/Int32";
-import Oracle "./oracle";
-import Auction "./auction";
+import OracleWrapper "./oracle_wrapper";
+import AuctionWrapper "./auction_wrapper";
+import U "./utils";
 
-module MarketMakerModule {
-  type CurrencyRate = {
-    rate : Nat64;
-    decimals : Nat32;
-  };
-
+module MarketMaker {
   type PricesInfo = {
     bid_price : Float;
     ask_price : Float;
@@ -36,111 +37,18 @@ module MarketMakerModule {
     price : Float;
   };
 
-  public type AssetInfo = {
-    principal : Principal;
-    asset : Oracle.Asset;
-    decimals : Nat32;
-  };
-
   public type MarketPair = {
-    base : AssetInfo;
-    quote : AssetInfo;
+    base_principal : Principal;
+    base_symbol : Text;
+    base_decimals : Nat32;
+    base_credits : Nat;
+    quote_principal : Principal;
+    quote_symbol : Text;
+    quote_decimals : Nat32;
+    quote_credits : Nat;
     spread_value : Float;
   };
 
-  public type ExecutionError = {
-    #PlacementError;
-    #CancellationError;
-    #UnknownPrincipal;
-    #UnknownError;
-    #RatesError;
-    #ConflictOrderError;
-    #UnknownAssetError;
-    #NoCreditError;
-    #TooLowOrderError;
-  };
-
-  // Consider making a class Oracle which
-  // - takes xrc as constructor argument
-  // - provides function getCurrenrRate(base, quote)
-  // - is instantiated once in main.mo
-  // - is passed to the MarketMaker constructor in place of xrc : Oracle.Self
-  // So essentially a class that wraps around Oracle.Self
-  //
-  // As a side effect: This helps in testing MarketMaker with Motoko-only tests (with the interpreter, mops test)
-  // The test can mock the class without actually using Oracle.Self
-  func getCurrentRate(xrc : Oracle.Self, base : Oracle.Asset, quote : Oracle.Asset) : async* {
-    #Ok : CurrencyRate;
-    #Err : {
-      #ErrorGetRates;
-    };
-  } {
-    let request : Oracle.GetExchangeRateRequest = {
-      timestamp = null;
-      quote_asset = quote;
-      base_asset = base;
-    };
-    Cycles.add<system>(10_000_000_000);
-    let response = await xrc.get_exchange_rate(request);
-
-    switch (response) {
-      case (#Ok(success)) {
-        let currency_rate : CurrencyRate = {
-          rate = success.rate;
-          decimals = success.metadata.decimals;
-        };
-
-        return #Ok(currency_rate);
-      };
-      case (#Err(_)) {
-        return #Err(#ErrorGetRates);
-      };
-    };
-  };
-
-  // Consider making a class Auction which
-  // - takes ac as constructor argument
-  // - provides function replaceOrders
-  // - is instantiated once in main.mo
-  // - is passed to the MarketMaker constructor in place of ac : Auction.Self
-  // So essentially a class that wraps around Auction.Self
-  //
-  // As a side effect: This helps in testing MarketMaker with Motoko-only tests (with the interpreter, mops test)
-  // The test can mock the class without actually using Auction.Self
-  func replaceOrders(ac : Auction.Self, token : Principal, bid : OrderInfo, ask : OrderInfo) : async* {
-    #Ok : [Nat];
-    #Err : Auction.ManageOrdersError;
-  } {
-    try {
-
-      let response = await ac.manageOrders(
-        ?(#all(?[token])), // cancell all orders for tokens
-        [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
-      );
-
-      switch (response) {
-        case (#Ok(success)) #Ok(success);
-        case (#Err(error)) {
-          switch (error) {
-            case (#cancellation(_)) {
-              let response = await ac.manageOrders(
-                ?(#orders([])),
-                [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
-              );
-
-              switch (response) {
-                case (#Ok(success)) #Ok(success);
-                case (#Err(error)) #Err(error);
-              };
-            };
-            case (_) #Err(error);
-          };
-        };
-      };
-    } catch (_) {
-      #Err(#UnknownError);
-    }
-  };
 
   let digits : Float = 5;
 
@@ -150,7 +58,7 @@ module MarketMakerModule {
     Float.floor(x * 10 ** e1) * 10 ** -e1;
   };
 
-  func getPrices(spread : Float, currency_rate : CurrencyRate, decimals_multiplicator : Int32) : PricesInfo {
+  func getPrices(spread : Float, currency_rate : OracleWrapper.CurrencyRate, decimals_multiplicator : Int32) : PricesInfo {
     let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currency_rate.decimals)));
     let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(10, exponent);
     // normalize the price before create the order to the smallest units of the tokens
@@ -177,81 +85,56 @@ module MarketMakerModule {
     }
   };
 
-  public class MarketMaker(pair : MarketPair, xrc : Oracle.Self, ac : Auction.Self) {
+  public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {
+    #Ok : (OrderInfo, OrderInfo);
+    #Err : U.ExecutionError;
+  } {
+    let current_rate_result = await* xrc.getExchangeRate(pair.base_symbol, pair.quote_symbol);
 
-    public func execute(credits : CreditsInfo) : async* {
-      #Ok : (OrderInfo, OrderInfo);
-      #Err : ExecutionError;
-    } {
-      let { base_credit; quote_credit } = credits;
-      let current_rate_result = await* getCurrentRate(xrc, pair.base.asset, pair.quote.asset);
+    // calculate multiplicator which help to normalize the price before create
+    // the order to the smallest units of the tokens
+    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.base_decimals) - Int32.fromNat32(pair.quote_decimals);
 
-      // calculate multiplicator which help to normalize the price before create
-      // the order to the smallest units of the tokens
-      let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.base.decimals) - Int32.fromNat32(pair.quote.decimals);
+    switch (current_rate_result) {
+      case (#Ok(current_rate)) {
+        let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
+        let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
 
-      switch (current_rate_result) {
-        case (#Ok(current_rate)) {
-          let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
-          let { bid_volume; ask_volume } = getVolumes({ base_credit; quote_credit }, { bid_price; ask_price });
+        let bid_order : OrderInfo = {
+          amount = bid_volume;
+          price = bid_price;
+        };
+        let ask_order : OrderInfo = {
+          amount = ask_volume;
+          price = ask_price;
+        };
 
-          let bid_order : OrderInfo = {
-            amount = bid_volume;
-            price = bid_price;
-          };
-          let ask_order : OrderInfo = {
-            amount = ask_volume;
-            price = ask_price;
-          };
+        let replace_orders_result = await* ac.replaceOrders(pair.base_principal, bid_order, ask_order);
 
-          let replace_orders_result = await* replaceOrders(ac, pair.base.principal, bid_order, ask_order);
-
-          switch (replace_orders_result) {
-            case (#Ok(_)) #Ok(bid_order, ask_order);
-            case (#Err(err)) {
-              switch (err) {
-                case (#placement(err)) {
-                  switch (err.error) {
-                    case (#ConflictingOrder(_)) #Err(#ConflictOrderError);
-                    case (#UnknownAsset) #Err(#UnknownAssetError);
-                    case (#NoCredit) #Err(#NoCreditError);
-                    case (#TooLowOrder) #Err(#TooLowOrderError);
-                  };
+        switch (replace_orders_result) {
+          case (#Ok(_)) #Ok(bid_order, ask_order);
+          case (#Err(err)) {
+            switch (err) {
+              case (#placement(err)) {
+                switch (err.error) {
+                  case (#ConflictingOrder(_)) #Err(#ConflictOrderError);
+                  case (#UnknownAsset) #Err(#UnknownAssetError);
+                  case (#NoCredit) #Err(#NoCreditError);
+                  case (#TooLowOrder) #Err(#TooLowOrderError);
                 };
-                case (#cancellation(err)) #Err(#CancellationError);
-                case (#UnknownPrincipal) #Err(#UnknownPrincipal);
-                case (#UnknownError) #Err(#UnknownError);
               };
+              case (#cancellation(err)) #Err(#CancellationError);
+              case (#UnknownPrincipal) #Err(#UnknownPrincipal);
+              case (#UnknownError) #Err(#UnknownError);
             };
           };
         };
-        case (#Err(err)) {
-          switch (err) {
-            case (#ErrorGetRates) #Err(#RatesError);
-          };
+      };
+      case (#Err(err)) {
+        switch (err) {
+          case (#ErrorGetRates) #Err(#RatesError);
         };
       };
-    };
-
-    public func removeOrders() : async* {
-      #Ok;
-      #Err : {
-        #CancellationError;
-      };
-    } {
-      let response = await ac.manageOrders(
-        ?(#all(?[pair.base.principal])), // cancell all orders for tokens
-        [],
-      );
-
-      switch (response) {
-        case (#Ok(_)) #Ok;
-        case (#Err(_)) #Err(#CancellationError);
-      };
-    };
-
-    public func getPair() : (MarketPair) {
-      pair;
     };
   };
 };

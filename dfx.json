@@ -3,7 +3,12 @@
     "market-maker-bot-backend": {
       "main": "src/market-maker-bot-backend/main.mo",
       "type": "motoko",
-      "init_arg": "(principal \"b77ix-eeaaa-aaaaa-qaada-cai\", principal \"aovwi-4maaa-aaaaa-qaagq-cai\", principal \"5s5uw-viaaa-aaaaa-aaaaa-aaaaa-aaaaa-aa\", 6, \"TKN_0\")"
+      "init_arg": "(principal \"pmr6h-yaaaa-aaaao-a3myq-cai\", principal \"4jkon-4yaaa-aaaao-a3p6a-cai\")",
+      "did": "did/market-maker-bot-backend.did",
+      "declarations": {
+        "bindings": ["js", "ts"],
+        "output": "./src/declarations/market-maker-bot-backend"
+      }
     },
     "market-maker-bot-oracle": {
       "main": "src/market-maker-bot-oracle/main.mo",
@@ -16,6 +21,7 @@
       "source": [
         "src/market-maker-bot-frontend/dist"
       ],
+      "build": "npm run build --prefix ./src/market-maker-bot-frontend",
       "type": "assets",
       "workspace": "market-maker-bot-frontend"
     }
