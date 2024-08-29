@@ -43,7 +43,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
     if (is_initialized == false) {
       is_initialized := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      let quote_token = await* auction.getQuoteToken();
+      let quote_token : ?Principal = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       Debug.print("Quote token: " # Principal.toText(quote_token));
       Debug.print("Supported tokens: " # debug_show(supported_tokens));
@@ -145,7 +145,7 @@ actor class MarketMakerBot(auction_be_: Principal, oracle_be_: Principal) = self
     let size = market_pairs.size();
     let quote_token : Principal = await* auction.getQuoteToken();
     let token_credits : AssocList.AssocList<Principal, Nat> = await* auction.getCredits();
-    let quote_token_credits : Nat = U.getByKeyOrTrap<Principal, Nat>(token_credits, quote_token, Principal.equal, "Error get quote token credits") / size;
+    let quote_token_credits : Nat = U.getByKeyOrDefault<Principal, Nat>(token_credits, quote_token, Principal.equal, 0) / size;
     return AssocList.replace<Principal, Nat>(token_credits, quote_token, Principal.equal, ?quote_token_credits).0;
   };
 
