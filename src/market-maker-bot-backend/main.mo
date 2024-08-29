@@ -162,16 +162,18 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     return AssocList.replace<Principal, Nat>(token_credits, quote_token, Principal.equal, ?quote_token_credits).0;
   };
 
-  public func getPairsList() : async ([MarketMaker.MarketPair]) {
+  /// to make it faster let's not ask about credits here, just return paris list
+  /// we will manage credits and funds limit in separate place, so here is we can just return existing data
+  public query func getPairsList() : async ([MarketMaker.MarketPair]) {
     let size = market_pairs.size();
-    let token_credits = await* getCredits();
+    // let token_credits = await* getCredits();
     Array.tabulate<MarketMaker.MarketPair>(
       size,
-      func(i : Nat) : MarketMaker.MarketPair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, token_credits),
+      func(i : Nat) : MarketMaker.MarketPair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, null),
     );
   };
 
-  public func getHistory() : async ([HistoryModule.HistoryItemType]) {
+  public query func getHistory() : async ([HistoryModule.HistoryItemType]) {
     let size = history.size();
     Array.tabulate<HistoryModule.HistoryItemType>(
       size,
@@ -190,7 +192,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     await* setBotState(false);
   };
 
-  public func getBotState() : async (BotState) {
+  public query func getBotState() : async (BotState) {
     {
       running = is_running;
     };
