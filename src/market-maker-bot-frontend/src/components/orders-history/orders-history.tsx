@@ -39,10 +39,10 @@ export const OrdersHistory = () => {
           return (
             <tr key={i}>
               <td>
-                {item?.pair?.base?.asset?.symbol}
+                {item?.pair?.base_symbol}
               </td>
               <td>
-                {item?.pair?.quote?.asset?.symbol}
+                {item?.pair?.quote_symbol}
               </td>
               <td>
                 {item?.pair?.spread_value}

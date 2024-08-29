@@ -25,35 +25,6 @@ export const useBot = () => {
   return { bot };
 };
 
-export const useAddPair = () => {
-  const { bot } = useBot();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
-  return useMutation(
-    (formObj: {
-      principal: string;
-      symbol: string;
-      decimals: number;
-      spread_value: number;
-    }) =>
-      bot.addPair({
-        principal: formObj.principal,
-        decimals: formObj.decimals,
-        symbol: formObj.symbol,
-        spread_value: formObj.spread_value,
-      }),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getPairs');
-        enqueueSnackbar(`Pair added`, { variant: 'success' });
-      },
-      onError: err => {
-        enqueueSnackbar(`Failed to add pair: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-
 export const useExecuteMarketMaking = () => {
   const { bot } = useBot();
   const queryClient = useQueryClient();
@@ -114,24 +85,6 @@ export const useGetPairsList = () => {
     {
       onError: (err: unknown) => {
         enqueueSnackbar(`Failed to fetch pairs: ${err}`, { variant: 'error' });
-      },
-    },
-  );
-};
-
-export const useRemovePairByIndex = () => {
-  const { bot } = useBot();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
-  return useMutation(
-    (pairIndex: number) => bot.removePairByIndex(BigInt(pairIndex)),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getPairsList');
-        enqueueSnackbar(`Pair removed`, { variant: 'success' });
-      },
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to  pair: ${err}`, { variant: 'error' });
       },
     },
   );

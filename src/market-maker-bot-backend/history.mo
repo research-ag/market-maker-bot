@@ -25,7 +25,7 @@ module HistoryModule {
     public func getText() : (Text) {
       Text.join("", [
         Int.toText(timeStamp), ":  ",
-        pair.base.asset.symbol, ":", pair.quote.asset.symbol, " ",
+        pair.base_symbol, ":", pair.quote_symbol, " ",
         "BID ", Nat.toText(bidOrder.amount), " price ", Float.toText(bidOrder.price), ", ",
         "ASK ", Nat.toText(askOrder.amount), " price ", Float.toText(askOrder.price), ", ",
         "RESULT ", message
