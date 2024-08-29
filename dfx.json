@@ -3,12 +3,16 @@
     "market-maker-bot-backend": {
       "main": "src/market-maker-bot-backend/main.mo",
       "type": "motoko",
-      "init_arg": "(principal \"pmr6h-yaaaa-aaaao-a3myq-cai\", principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")",
+      "init_arg": "(principal \"pmr6h-yaaaa-aaaao-a3myq-cai\", principal \"4jkon-4yaaa-aaaao-a3p6a-cai\")",
       "did": "did/market-maker-bot-backend.did",
       "declarations": {
         "bindings": ["js", "ts"],
         "output": "./src/declarations/market-maker-bot-backend"
       }
+    },
+    "market-maker-bot-oracle": {
+      "main": "src/market-maker-bot-oracle/main.mo",
+      "type": "motoko"
     },
     "market-maker-bot-frontend": {
       "dependencies": [

@@ -1,0 +1,11 @@
+{
+  "market-maker-bot-backend": {
+    "ic": "4oliz-raaaa-aaaao-a3p6q-cai"
+  },
+  "market-maker-bot-frontend": {
+    "ic": "4hidf-hiaaa-aaaao-a3p7a-cai"
+  },
+  "market-maker-bot-oracle": {
+    "ic": "4jkon-4yaaa-aaaao-a3p6a-cai"
+  }
+}
