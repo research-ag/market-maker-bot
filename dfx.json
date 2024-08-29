@@ -21,6 +21,7 @@
       "source": [
         "src/market-maker-bot-frontend/dist"
       ],
+      "build": "npm run build --prefix ./src/market-maker-bot-frontend",
       "type": "assets",
       "workspace": "market-maker-bot-frontend"
     }
