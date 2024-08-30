@@ -11,25 +11,23 @@ const transformHistoryItem = (item: HistoryItemType) => {
   const askOrder = item.askOrder && item.askOrder.length ? item.askOrder[0] : null;
   const spread = item.pair.spread_value;
   const baseToken = item.pair.base_symbol;
-  const quoteSymbol = item.pair.quote_symbol;
-  const pair = `${baseToken}:${quoteSymbol}`;
   const baseDecimals = item.pair.base_decimals;
   const quoteDecimals = item.pair.quote_decimals;
   const normalize_factor = quoteDecimals - baseDecimals;
   const bidVolume = bidOrder?.amount ? displayWithDecimals(bidOrder?.amount, baseDecimals) : 'N/A';
   const askVolume = askOrder?.amount ? displayWithDecimals(askOrder?.amount, baseDecimals) : 'N/A';
-  const bidPrice = bidOrder?.price ? displayWithDecimals(bidOrder?.price / 10**normalize_factor, 0) : 'N/A';
-  const askPrice = askOrder?.price ? displayWithDecimals(askOrder?.price / 10**normalize_factor, 0) : 'N/A';
+  const bidPrice = bidOrder?.price ? (bidOrder?.price / 10**normalize_factor).toPrecision(5) : 'N/A';
+  const askPrice = askOrder?.price ? (askOrder?.price / 10**normalize_factor).toPrecision(5) : 'N/A';
 
   return {
     timestamp,
-    pair,
+    baseToken,
     spread,
     bidVolume,
     bidPrice,
     askVolume,
     askPrice,
-    rate: item.rate,
+    rate: item.rate ? item.rate[0]?.toPrecision(5) : 'N/A',
     message: item.message,
   };
 }
@@ -42,7 +40,7 @@ export const OrdersHistory = () => {
       <Table>
         <colgroup>
           <col style={{ width: '150px' }} />
-          <col style={{ width: '100px' }} />
+          <col style={{ width: '50px' }} />
           <col style={{ width: '50px' }} />
           <col style={{ width: '100px' }} />
           <col style={{ width: '100px' }} />
@@ -53,7 +51,7 @@ export const OrdersHistory = () => {
         <thead>
         <tr>
           <th>Timestamp</th>
-          <th>Pair</th>
+          <th>Token</th>
           <th>Spread</th>
           <th>Rate</th>
           <th>BID Volume</th>
@@ -73,7 +71,7 @@ export const OrdersHistory = () => {
         {!isFetching && (history ?? []).map((item: any, i: number) => {
           const {
             timestamp,
-            pair,
+            baseToken,
             spread,
             bidVolume,
             bidPrice,
@@ -85,7 +83,7 @@ export const OrdersHistory = () => {
           return (
             <tr key={i}>
               <td>{timestamp.toLocaleString()}</td>
-              <td>{pair}</td>
+              <td>{baseToken}</td>
               <td>{spread}</td>
               {item.message === 'OK' ? (
                 <>
