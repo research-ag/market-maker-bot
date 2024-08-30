@@ -58,15 +58,13 @@ module MarketMaker {
     Float.floor(x * 10 ** e1) * 10 ** -e1;
   };
 
-  func getPrices(spread : Float, currency_rate : OracleWrapper.CurrencyRate, decimals_multiplicator : Int32) : PricesInfo {
-    let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currency_rate.decimals)));
-    let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(10, exponent);
+  func getPrices(spread : Float, currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
     // normalize the price before create the order to the smallest units of the tokens
     let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
 
     {
-      bid_price = limitPrecision(float_price * (1.0 - spread) * Float.pow(10, multiplicator));
-      ask_price = limitPrecision(float_price * (1.0 + spread) * Float.pow(10, multiplicator));
+      bid_price = limitPrecision(currency_rate * (1.0 - spread) * Float.pow(10, multiplicator));
+      ask_price = limitPrecision(currency_rate * (1.0 + spread) * Float.pow(10, multiplicator));
     };
   };
 
@@ -88,8 +86,8 @@ module MarketMaker {
   };
 
   public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {
-    #Ok : (OrderInfo, OrderInfo);
-    #Err : U.ExecutionError;
+    #Ok : (OrderInfo, OrderInfo, Float);
+    #Err : (OrderInfo, OrderInfo, Float, U.ExecutionError);
   } {
     let current_rate_result = await* xrc.getExchangeRate(pair.base_symbol, pair.quote_symbol);
 
@@ -114,27 +112,31 @@ module MarketMaker {
         let replace_orders_result = await* ac.replaceOrders(pair.base_principal, bid_order, ask_order);
 
         switch (replace_orders_result) {
-          case (#Ok(_)) #Ok(bid_order, ask_order);
+          case (#Ok(_)) #Ok(bid_order, ask_order, current_rate);
           case (#Err(err)) {
             switch (err) {
               case (#placement(err)) {
                 switch (err.error) {
-                  case (#ConflictingOrder(_)) #Err(#ConflictOrderError);
-                  case (#UnknownAsset) #Err(#UnknownAssetError);
-                  case (#NoCredit) #Err(#NoCreditError);
-                  case (#TooLowOrder) #Err(#TooLowOrderError);
+                  case (#ConflictingOrder(_)) #Err(bid_order, ask_order, current_rate, #ConflictOrderError);
+                  case (#UnknownAsset) #Err(bid_order, ask_order, current_rate, #UnknownAssetError);
+                  case (#NoCredit) #Err(bid_order, ask_order, current_rate, #NoCreditError);
+                  case (#TooLowOrder) #Err(bid_order, ask_order, current_rate, #TooLowOrderError);
                 };
               };
-              case (#cancellation(err)) #Err(#CancellationError);
-              case (#UnknownPrincipal) #Err(#UnknownPrincipal);
-              case (#UnknownError) #Err(#UnknownError);
+              case (#cancellation(err)) #Err(bid_order, ask_order, current_rate, #CancellationError);
+              case (#UnknownPrincipal) #Err(bid_order, ask_order, current_rate, #UnknownPrincipal);
+              case (#UnknownError) #Err(bid_order, ask_order, current_rate, #UnknownError);
             };
           };
         };
       };
       case (#Err(err)) {
+        let empty_order : OrderInfo = {
+          amount = 0;
+          price = 0.0;
+        };
         switch (err) {
-          case (#ErrorGetRates) #Err(#RatesError);
+          case (#ErrorGetRates) #Err(empty_order, empty_order, 0, #RatesError);
         };
       };
     };
