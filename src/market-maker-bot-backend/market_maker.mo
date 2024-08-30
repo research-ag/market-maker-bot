@@ -87,7 +87,7 @@ module MarketMaker {
 
   public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {
     #Ok : (OrderInfo, OrderInfo, Float);
-    #Err : (OrderInfo, OrderInfo, Float, U.ExecutionError);
+    #Err : (U.ExecutionError, ?OrderInfo, ?OrderInfo, ?Float);
   } {
     let current_rate_result = await* xrc.getExchangeRate(pair.base_symbol, pair.quote_symbol);
 
@@ -117,26 +117,22 @@ module MarketMaker {
             switch (err) {
               case (#placement(err)) {
                 switch (err.error) {
-                  case (#ConflictingOrder(_)) #Err(bid_order, ask_order, current_rate, #ConflictOrderError);
-                  case (#UnknownAsset) #Err(bid_order, ask_order, current_rate, #UnknownAssetError);
-                  case (#NoCredit) #Err(bid_order, ask_order, current_rate, #NoCreditError);
-                  case (#TooLowOrder) #Err(bid_order, ask_order, current_rate, #TooLowOrderError);
+                  case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?bid_order, ?ask_order, ?current_rate);
+                  case (#UnknownAsset) #Err(#UnknownAssetError, ?bid_order, ?ask_order, ?current_rate);
+                  case (#NoCredit) #Err(#NoCreditError, ?bid_order, ?ask_order, ?current_rate);
+                  case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?ask_order, ?current_rate);
                 };
               };
-              case (#cancellation(err)) #Err(bid_order, ask_order, current_rate, #CancellationError);
-              case (#UnknownPrincipal) #Err(bid_order, ask_order, current_rate, #UnknownPrincipal);
-              case (#UnknownError) #Err(bid_order, ask_order, current_rate, #UnknownError);
+              case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
+              case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?ask_order, ?current_rate);
+              case (#UnknownError) #Err(#UnknownError, ?bid_order, ?ask_order, ?current_rate);
             };
           };
         };
       };
       case (#Err(err)) {
-        let empty_order : OrderInfo = {
-          amount = 0;
-          price = 0.0;
-        };
         switch (err) {
-          case (#ErrorGetRates) #Err(empty_order, empty_order, 0, #RatesError);
+          case (#ErrorGetRates) #Err(#RatesError, null, null, null);
         };
       };
     };
