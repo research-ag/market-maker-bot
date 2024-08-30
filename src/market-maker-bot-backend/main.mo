@@ -55,7 +55,15 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
 
-  public func init() : async (BotState) {
+  public func init() : async {
+    #Ok : (BotState);
+    #Err : ({
+      #UnknownQuoteTokenError;
+      #InitializingInProgressError;
+      #AlreadyInitializedError;
+      #UnknownError;
+    });
+  } {
     try {
       if (is_initializing == false) {
         is_initializing := true;
@@ -64,7 +72,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
           quote_token := ?(await* auction.getQuoteToken());
           supported_tokens := await* auction.getSupportedTokens();
 
-          ignore switch (quote_token) {
+          switch (quote_token) {
             case (?quote_token) {
               for (token in supported_tokens.vals()) {
                 if (Principal.equal(token, quote_token) == false) {
@@ -77,14 +85,25 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
                 };
               };
               is_initialized := true;
+              is_initializing := false;
+              return #Ok(getState());
             };
-            case (null) {};
+            case (null) {
+              is_initializing := false;
+              return #Err(#UnknownQuoteTokenError);
+            };
           }
+        } else {
+          is_initializing := false;
+          return #Err(#AlreadyInitializedError);
         };
+      } else {
+        return #Err(#InitializingInProgressError);
       };
-    } catch (_) {};
-    is_initializing := false;
-    return getState();
+    } catch (_) {
+      is_initializing := false;
+      return #Err(#UnknownError);
+    };
   };
 
   public type BotState = {
@@ -218,17 +237,46 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     getState();
   };
 
-  public func startBot() : async (BotState) {
+  public func startBot() : async {
+    #Ok : (BotState);
+    #Err : ({
+      #NotInitializedError;
+      #AlreadyStartedError;
+    });
+  } {
     Debug.print("Start bot");
+
+    if (is_initialized == false) {
+      return #Err(#NotInitializedError);
+    };
+
+    if (is_running == true) {
+      return #Err(#AlreadyStartedError);
+    };
+
     is_running := true;
-    getState();
+
+    #Ok(getState());
   };
 
   public func stopBot() : async {
     #Ok : (BotState);
-    #Err : (BotState);
+    #Err : ({
+      #NotInitializedError;
+      #AlreadyStopedError;
+      #CancelOrdersError;
+    });
   } {
     Debug.print("Stop bot");
+
+    if (is_initialized == false) {
+      return #Err(#NotInitializedError);
+    };
+
+    if (is_running == false) {
+      return #Err(#AlreadyStopedError);
+    };
+
     let remove_orders_result = await* cancelAllOrders();
     switch (remove_orders_result) {
       case (#Ok) {
@@ -236,7 +284,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         return #Ok(getState());
       };
       case (#Err) {
-        return #Err(getState());
+        return #Err(#CancelOrdersError);
       };
     };
   };
@@ -248,6 +296,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
     while (i < size) {
       let market_pair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, token_credits);
+
 
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {

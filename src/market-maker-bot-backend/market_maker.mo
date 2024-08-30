@@ -9,7 +9,6 @@
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
-import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Int32 "mo:base/Int32";
 import OracleWrapper "./oracle_wrapper";
