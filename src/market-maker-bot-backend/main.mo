@@ -33,38 +33,66 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
   let default_spread_value : Float = 0.05;
 
-  var is_initialized : Bool = false;
   var market_pairs : [MarketMakerModule.MarketPair] = [];
   var history : [HistoryModule.HistoryItem] = [];
 
+  /// Bot state flags and variables
   stable var is_running : Bool = false;
+  var is_initialized : Bool = false;
+  var is_initializing : Bool = false;
+  var quote_token : ?Principal = null;
+  var supported_tokens : [Principal] = [];
+  /// End Bot state flags and variables
 
-  public func init() : async () {
-    if (is_initialized == false) {
-      is_initialized := true;
-      Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      let quote_token : Principal = await* auction.getQuoteToken();
-      let supported_tokens = await* auction.getSupportedTokens();
-      Debug.print("Quote token: " # Principal.toText(quote_token));
-      Debug.print("Supported tokens: " # debug_show (supported_tokens));
+  func getState() : (BotState) {
+    {
+      running = is_running;
+      initialized = is_initialized;
+      initializing = is_initializing;
+      quote_token = quote_token;
+      supported_tokens = supported_tokens;
+    };
+  };
 
-      for (token in supported_tokens.vals()) {
-        if (Principal.equal(token, quote_token) == false) {
-          switch (AssocList.find(tokens_info, token, Principal.equal)) {
-            case (?_) {
-              market_pairs := Array.append(market_pairs, [getMarketPair(token, quote_token, null)]);
+
+  public func init() : async (BotState) {
+    try {
+      if (is_initializing == false) {
+        is_initializing := true;
+        if (is_initialized == false) {
+          Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
+          quote_token := ?(await* auction.getQuoteToken());
+          supported_tokens := await* auction.getSupportedTokens();
+
+          ignore switch (quote_token) {
+            case (?quote_token) {
+              for (token in supported_tokens.vals()) {
+                if (Principal.equal(token, quote_token) == false) {
+                  switch (AssocList.find(tokens_info, token, Principal.equal)) {
+                    case (?_) {
+                      market_pairs := Array.append(market_pairs, [getMarketPair(token, quote_token, null)]);
+                    };
+                    case (_) {};
+                  };
+                };
+              };
+              is_initialized := true;
             };
-            case (_) {};
-          };
+            case (null) {};
+          }
         };
       };
-    } else {
-      Debug.print("Bot already initialized");
-    };
+    } catch (_) {};
+    is_initializing := false;
+    return getState();
   };
 
   public type BotState = {
     running : Bool;
+    initialized : Bool;
+    initializing : Bool;
+    quote_token : ?Principal;
+    supported_tokens : [Principal];
   };
 
   system func preupgrade() {
@@ -75,7 +103,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     Debug.print("Postupgrade");
     ignore Timer.setTimer<system>(#seconds (0), func(): async () {
       Debug.print("Init fired");
-      await init();
+      ignore await init();
     });
   };
 
@@ -87,14 +115,6 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       [historyItem],
     );
     Debug.print(historyItem.getText());
-  };
-
-  func setBotState(running : Bool) : async* (BotState) {
-    is_running := running;
-
-    {
-      running = is_running;
-    };
   };
 
   func getMarketPair(base : Principal, quote : Principal, token_credits : AssocList.AssocList<Principal, Nat>) : (MarketMakerModule.MarketPair) {
@@ -114,8 +134,16 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  func cancelAllOrders() : async* () {
+  func cancelAllOrders() : async* {
+    #Ok : ();
+    #Err : ();
+  } {
     let size = market_pairs.size();
+
+    if (size == 0) {
+      return #Ok;
+    };
+
     let tokens = Array.tabulate<Principal>(
       size,
       func(i : Nat) : Principal = market_pairs[i].base_principal,
@@ -126,9 +154,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     switch (execute_result) {
       case (#Ok) {
         addHistoryItem(market_pairs[0], null, null, null, "ORDERS REMOVED");
+        return #Ok;
       };
       case (#Err(err)) {
         addHistoryItem(market_pairs[0], null, null, null, "ORDERS REMOVING ERROR: " # U.getErrorMessage(err));
+        return #Err;
       };
     };
   };
@@ -150,11 +180,19 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     /// based on the current state of the auction, quote credit limit and already placed orders
     /// temporary just simple return quote token credits divided by pairs count
     await* notifyCreditUpdates();
-    let size = market_pairs.size();
-    let quote_token : Principal = await* auction.getQuoteToken();
     let token_credits : AssocList.AssocList<Principal, Nat> = await* auction.getCredits();
-    let quote_token_credits : Nat = U.getByKeyOrDefault<Principal, Nat>(token_credits, quote_token, Principal.equal, 0) / size;
-    return AssocList.replace<Principal, Nat>(token_credits, quote_token, Principal.equal, ?quote_token_credits).0;
+
+    switch (quote_token) {
+      case (?quote_token) {
+        let size = market_pairs.size();
+        let quote_token_credits : Nat = U.getByKeyOrDefault<Principal, Nat>(token_credits, quote_token, Principal.equal, 0) / size;
+        return AssocList.replace<Principal, Nat>(token_credits, quote_token, Principal.equal, ?quote_token_credits).0;
+      };
+      case (null) {
+        return token_credits;
+      };
+    }
+
   };
 
   /// to make it faster let's not ask about credits here, just return paris list
@@ -176,20 +214,30 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     );
   };
 
+  public query func getBotState() : async (BotState) {
+    getState();
+  };
+
   public func startBot() : async (BotState) {
     Debug.print("Start bot");
-    await* setBotState(true);
+    is_running := true;
+    getState();
   };
 
-  public func stopBot() : async (BotState) {
+  public func stopBot() : async {
+    #Ok : (BotState);
+    #Err : (BotState);
+  } {
     Debug.print("Stop bot");
-    await* cancelAllOrders();
-    await* setBotState(false);
-  };
-
-  public query func getBotState() : async (BotState) {
-    {
-      running = is_running;
+    let remove_orders_result = await* cancelAllOrders();
+    switch (remove_orders_result) {
+      case (#Ok) {
+        is_running := false;
+        return #Ok(getState());
+      };
+      case (#Err) {
+        return #Err(getState());
+      };
     };
   };
 
