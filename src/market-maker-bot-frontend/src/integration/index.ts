@@ -95,7 +95,7 @@ export const useStartBot = () => {
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   return useMutation(
-    () => bot.startBot(5n),
+    (timer: bigint) => bot.startBot(timer),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('getBotState');

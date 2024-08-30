@@ -26,7 +26,7 @@ const Root = () => {
             <InfoItem label="Initialized" content={botState?.initializing ? 'in progress' : (botState?.initialized ? 'true' : 'false')} />
             <InfoItem label="Timer interval" content={botState?.timer_interval ? `${botState?.timer_interval.toString()} seconds` :  '0 seconds'} />
             <InfoItem label="Quote token principal" content={botState?.quote_token && botState?.quote_token.length ? botState?.quote_token[0].toString() : ''} />
-            <ToggleBotButton isRunning = {!!botState?.running} isFetching = {isFetching} />
+            <ToggleBotButton isRunning = {!!botState?.running} isFetching = {isFetching} currentTimer = {botState?.timer_interval ?? 0n}/>
           </Box>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
