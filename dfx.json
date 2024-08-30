@@ -10,10 +10,6 @@
         "output": "./src/declarations/market-maker-bot-backend"
       }
     },
-    "market-maker-bot-oracle": {
-      "main": "src/market-maker-bot-oracle/main.mo",
-      "type": "motoko"
-    },
     "market-maker-bot-frontend": {
       "dependencies": [
         "market-maker-bot-backend"
