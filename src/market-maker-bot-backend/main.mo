@@ -262,10 +262,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
     is_running := true;
 
-    await executeBot();
-
     bot_timer_interval := timer_interval;
     runTimer<system>();
+
+    ignore Timer.setTimer<system>(#seconds (0), func(): async () {
+      await executeBot();
+    });
 
     #Ok(getState());
   };
