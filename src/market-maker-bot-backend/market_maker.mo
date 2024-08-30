@@ -93,7 +93,7 @@ module MarketMaker {
 
     // calculate multiplicator which help to normalize the price before create
     // the order to the smallest units of the tokens
-    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.base_decimals) - Int32.fromNat32(pair.quote_decimals);
+    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.quote_decimals) - Int32.fromNat32(pair.base_decimals);
 
     switch (current_rate_result) {
       case (#Ok(current_rate)) {
