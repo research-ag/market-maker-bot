@@ -35,8 +35,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   var market_pairs : [MarketMakerModule.MarketPair] = [];
   var history : [HistoryModule.HistoryItem] = [];
+  var bot_timer : Timer.TimerId = 0;
 
   /// Bot state flags and variables
+  stable var bot_timer_interval : Nat = 6 * 60;
   stable var is_running : Bool = false;
   var is_initialized : Bool = false;
   var is_initializing : Bool = false;
@@ -46,6 +48,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   func getState() : (BotState) {
     {
+      timer_interval = bot_timer_interval;
       running = is_running;
       initialized = is_initialized;
       initializing = is_initializing;
@@ -107,6 +110,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public type BotState = {
+    timer_interval: Nat;
     running : Bool;
     initialized : Bool;
     initializing : Bool;
@@ -200,10 +204,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     /// temporary just simple return quote token credits divided by pairs count
     await* notifyCreditUpdates();
     let token_credits : AssocList.AssocList<Principal, Nat> = await* auction.getCredits();
-
     switch (quote_token) {
       case (?quote_token) {
         let size = market_pairs.size();
+        if (size == 0) {
+          return token_credits;
+        };
         let quote_token_credits : Nat = U.getByKeyOrDefault<Principal, Nat>(token_credits, quote_token, Principal.equal, 0) / size;
         return AssocList.replace<Principal, Nat>(token_credits, quote_token, Principal.equal, ?quote_token_credits).0;
       };
@@ -237,7 +243,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     getState();
   };
 
-  public func startBot() : async {
+  public func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
     #Err : ({
       #NotInitializedError;
@@ -255,6 +261,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
 
     is_running := true;
+
+    await executeBot();
+
+    bot_timer_interval := timer_interval;
+    runTimer<system>();
 
     #Ok(getState());
   };
@@ -281,6 +292,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     switch (remove_orders_result) {
       case (#Ok) {
         is_running := false;
+        stopTimer();
         return #Ok(getState());
       };
       case (#Err) {
@@ -330,6 +342,18 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     await executeMarketMaking();
   };
 
-  // Timer value set to 5 minutes
-  Timer.recurringTimer<system>(#seconds(300), executeBot);
+  func runTimer<system>() : () {
+    bot_timer := Timer.recurringTimer<system>(#seconds(bot_timer_interval), executeBot);
+  };
+
+  func stopTimer() : () {
+    if (bot_timer != 0) {
+      Timer.cancelTimer(bot_timer);
+      bot_timer := 0;
+    };
+  };
+
+  if (is_running) {
+    runTimer<system>();
+  }
 };
