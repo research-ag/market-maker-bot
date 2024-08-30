@@ -1,14 +1,13 @@
 import { Button } from '@mui/joy';
 
-import { useGetBotState, useStartBot, useStopBot } from '../../integration';
+import { useStartBot, useStopBot } from '../../integration';
 
-export const ToggleBotButton = () => {
-  const { data: botState, isFetching: isStateLoading } = useGetBotState();
+export const ToggleBotButton = (props : { isRunning: boolean, isFetching: boolean }) => {
   const { mutate: startBot, isLoading: isStartLoading } = useStartBot();
   const { mutate: stopBot, isLoading: isStopLoading } = useStopBot();
 
-  const isStarted = !!botState?.running;
-  const isLoading = isStateLoading || isStartLoading || isStopLoading;
+  const isStarted = !!props?.isRunning;
+  const isLoading = !!props?.isFetching || isStartLoading || isStopLoading;
 
   const handleClick = () => {
     if (isStarted) {

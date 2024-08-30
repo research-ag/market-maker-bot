@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, Button, Tab, TabList, Tabs } from '@mui/joy';
 
-import { canisterId } from '../../integration';
+import { canisterId, useGetBotState } from '../../integration';
 
 import { ToggleBotButton } from '../toggle-bot-button';
 import { ThemeButton } from '../theme-button';
@@ -11,6 +11,7 @@ import { OrdersHistory } from '../orders-history';
 import InfoItem from './info-item';
 
 const Root = () => {
+  const { data: botState, isFetching } = useGetBotState();
   const [tabValue, setTabValue] = useState(0);
 
   return (
@@ -22,7 +23,10 @@ const Root = () => {
         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, marginBottom: 1 }}>
             <InfoItem label="Bot principal" content={canisterId} withCopy />
-            <ToggleBotButton />
+            <InfoItem label="Initialized" content={botState?.initializing ? 'in progress' : (botState?.initialized ? 'true' : 'false')} />
+            <InfoItem label="Timer interval" content={botState?.timer_interval ? `${botState?.timer_interval.toString()} seconds` :  '0 seconds'} />
+            <InfoItem label="Quote token principal" content={botState?.quote_token && botState?.quote_token.length ? botState?.quote_token[0].toString() : ''} />
+            <ToggleBotButton isRunning = {!!botState?.running} isFetching = {isFetching} />
           </Box>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
