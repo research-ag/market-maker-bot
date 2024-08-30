@@ -80,8 +80,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
 
-  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, message : Text) : () {
-    let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, message);
+  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : MarketMakerModule.OrderInfo, askOrder : MarketMakerModule.OrderInfo, rate : Float, message : Text) : () {
+    let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, rate, message);
     history := Array.append(
       history,
       [historyItem],
@@ -130,10 +130,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
     switch (execute_result) {
       case (#Ok) {
-        addHistoryItem(market_pairs[0], empty_order, empty_order, "ORDERS REMOVED");
+        addHistoryItem(market_pairs[0], empty_order, empty_order, 0, "ORDERS REMOVED");
       };
       case (#Err(err)) {
-        addHistoryItem(market_pairs[0], empty_order, empty_order, "ORDERS REMOVING ERROR: " # U.getErrorMessage(err));
+        addHistoryItem(market_pairs[0], empty_order, empty_order, 0, "ORDERS REMOVING ERROR: " # U.getErrorMessage(err));
       };
     };
   };
@@ -212,20 +212,20 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {
-          addHistoryItem(market_pair, empty_order, empty_order, "Error processing pair: empty credits for " # Principal.toText(market_pair.base_principal));
+          addHistoryItem(market_pair, empty_order, empty_order, 0, "Error processing pair: empty credits for " # Principal.toText(market_pair.base_principal));
         };
         if (market_pair.quote_credits == 0) {
-          addHistoryItem(market_pair, empty_order, empty_order, "Error processing pair: empty credits for " # Principal.toText(market_pair.quote_principal));
+          addHistoryItem(market_pair, empty_order, empty_order, 0, "Error processing pair: empty credits for " # Principal.toText(market_pair.quote_principal));
         };
       } else {
         let execute_result = await* MarketMaker.execute(market_pair, oracle, auction);
 
         switch (execute_result) {
           case (#Ok(bid_order, ask_order)) {
-            addHistoryItem(market_pair, bid_order, ask_order, "OK");
+            addHistoryItem(market_pair, bid_order, ask_order, 0, "OK");
           };
           case (#Err(err)) {
-            addHistoryItem(market_pair, empty_order, empty_order, U.getErrorMessage(err));
+            addHistoryItem(market_pair, empty_order, empty_order, 0, U.getErrorMessage(err));
           };
         };
       };
