@@ -4,9 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z as zod } from 'zod';
 import { Box, Button, FormControl, FormLabel, Input, Modal, ModalClose, ModalDialog, Typography } from '@mui/joy';
 
-import { useStartBot } from '../../integration';
-import { ErrorAlert}  from '../error-alert';
-
 interface SetTimerValues {
   timer: string;
 }
@@ -15,6 +12,7 @@ interface SetTimerProps {
   currentTimer: BigInt;
   isOpen: boolean;
   onClose: () => void;
+  onSubmit: (timer: bigint) => void;
 }
 
 const schema = zod.object({
@@ -24,7 +22,7 @@ const schema = zod.object({
     .refine(value => !isNaN(Number(value))),
 });
 
-export const SetTimerModal = ({ isOpen, onClose, currentTimer }: SetTimerProps) => {
+export const SetTimerModal = ({ isOpen, onClose, onSubmit, currentTimer }: SetTimerProps) => {
   const defaultValues: SetTimerValues = useMemo(
     () => ({
       timer: currentTimer.toString(),
@@ -44,17 +42,8 @@ export const SetTimerModal = ({ isOpen, onClose, currentTimer }: SetTimerProps) 
 
   const { isDirty, isValid } = useFormState({ control });
 
-  const { mutate: startBot, error, isLoading: isStartLoading } = useStartBot();
-
   const submit: SubmitHandler<SetTimerValues> = data => {
-    startBot(
-      BigInt(data.timer),
-      {
-        onSuccess: () => {
-          onClose();
-        },
-      },
-    );
+    onSubmit(BigInt(data.timer));
   };
 
   useEffect(() => {
@@ -87,11 +76,9 @@ export const SetTimerModal = ({ isOpen, onClose, currentTimer }: SetTimerProps) 
               )}
             />
           </Box>
-          {!!error && <ErrorAlert errorMessage={(error as Error).message} />}
           <Button
             sx={{ marginTop: 2 }}
             variant="solid"
-            loading={isStartLoading}
             type="submit"
             disabled={!isValid || !isDirty}>
             Start
