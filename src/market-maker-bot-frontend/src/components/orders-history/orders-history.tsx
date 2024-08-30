@@ -6,11 +6,13 @@ import { displayWithDecimals } from '../../utils';
 {/* <InfoItem content={`Credits ${displayWithDecimals(pair.base_credits, pair.base_decimals)}`} /> */}
 
 const transformHistoryItem = (item: HistoryItemType) => {
+  const timestamp = new Date(Number(item.timestamp / 1000000n));
   const bidOrder = item.bidOrder && item.bidOrder.length ? item.bidOrder[0] : null;
   const askOrder = item.askOrder && item.askOrder.length ? item.askOrder[0] : null;
   const spread = item.pair.spread_value;
   const baseToken = item.pair.base_symbol;
   const quoteSymbol = item.pair.quote_symbol;
+  const pair = `${baseToken}:${quoteSymbol}`;
   const baseDecimals = item.pair.base_decimals;
   const quoteDecimals = item.pair.quote_decimals;
   const normalize_factor = quoteDecimals - baseDecimals;
@@ -20,8 +22,8 @@ const transformHistoryItem = (item: HistoryItemType) => {
   const askPrice = askOrder?.price ? displayWithDecimals(askOrder?.price / 10**normalize_factor, 0) : 'N/A';
 
   return {
-    baseToken,
-    quoteSymbol,
+    timestamp,
+    pair,
     spread,
     bidVolume,
     bidPrice,
@@ -39,8 +41,8 @@ export const OrdersHistory = () => {
     <Box sx={{ width: '100%', overflow: 'auto' }}>
       <Table>
         <colgroup>
-          <col style={{ width: '50px' }} />
-          <col style={{ width: '50px' }} />
+          <col style={{ width: '150px' }} />
+          <col style={{ width: '100px' }} />
           <col style={{ width: '50px' }} />
           <col style={{ width: '100px' }} />
           <col style={{ width: '100px' }} />
@@ -50,8 +52,8 @@ export const OrdersHistory = () => {
         </colgroup>
         <thead>
         <tr>
-          <th>Base Token</th>
-          <th>Quote Token</th>
+          <th>Timestamp</th>
+          <th>Pair</th>
           <th>Spread</th>
           <th>Rate</th>
           <th>BID Volume</th>
@@ -70,8 +72,8 @@ export const OrdersHistory = () => {
         )}
         {!isFetching && (history ?? []).map((item: any, i: number) => {
           const {
-            baseToken,
-            quoteSymbol,
+            timestamp,
+            pair,
             spread,
             bidVolume,
             bidPrice,
@@ -82,8 +84,8 @@ export const OrdersHistory = () => {
           } = transformHistoryItem(item);
           return (
             <tr key={i}>
-              <td>{baseToken}</td>
-              <td>{quoteSymbol}</td>
+              <td>{timestamp.toLocaleString()}</td>
+              <td>{pair}</td>
               <td>{spread}</td>
               {item.message === 'OK' ? (
                 <>
