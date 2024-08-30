@@ -3,7 +3,7 @@
     "market-maker-bot-backend": {
       "main": "src/market-maker-bot-backend/main.mo",
       "type": "motoko",
-      "init_arg": "(principal \"pmr6h-yaaaa-aaaao-a3myq-cai\", principal \"4jkon-4yaaa-aaaao-a3p6a-cai\")",
+      "init_arg": "(principal \"pmr6h-yaaaa-aaaao-a3myq-cai\", principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")",
       "did": "did/market-maker-bot-backend.did",
       "declarations": {
         "bindings": ["js", "ts"],
