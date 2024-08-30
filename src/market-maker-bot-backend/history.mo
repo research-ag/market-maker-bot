@@ -10,7 +10,6 @@ import Nat "mo:base/Nat";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
 import MarketMakerModule "./market_maker";
-import U "./utils";
 
 module HistoryModule {
   public type HistoryItemType = {
