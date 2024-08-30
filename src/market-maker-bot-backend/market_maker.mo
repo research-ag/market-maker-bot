@@ -9,7 +9,6 @@
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
-import Int64 "mo:base/Int64";
 import Nat32 "mo:base/Nat32";
 import Int32 "mo:base/Int32";
 import OracleWrapper "./oracle_wrapper";
@@ -25,6 +24,11 @@ module MarketMaker {
   type ValumesInfo = {
     bid_volume : Nat;
     ask_volume : Nat;
+  };
+
+  type DecimalsInfo = {
+    base_decimals : Nat32;
+    quote_decimals : Nat32;
   };
 
   public type CreditsInfo = {
@@ -58,15 +62,10 @@ module MarketMaker {
     Float.floor(x * 10 ** e1) * 10 ** -e1;
   };
 
-  func getPrices(spread : Float, currency_rate : OracleWrapper.CurrencyRate, decimals_multiplicator : Int32) : PricesInfo {
-    let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(currency_rate.decimals)));
-    let float_price : Float = Float.fromInt64(Int64.fromNat64(currency_rate.rate)) / Float.pow(10, exponent);
-    // normalize the price before create the order to the smallest units of the tokens
-    let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
-
+  func getPrices(spread : Float, currency_rate : Float) : PricesInfo {
     {
-      bid_price = limitPrecision(float_price * (1.0 - spread) * Float.pow(10, multiplicator));
-      ask_price = limitPrecision(float_price * (1.0 + spread) * Float.pow(10, multiplicator));
+      bid_price = limitPrecision(currency_rate * (1.0 - spread));
+      ask_price = limitPrecision(currency_rate * (1.0 + spread));
     };
   };
 
@@ -77,28 +76,34 @@ module MarketMaker {
     Int.abs(10 ** Float.toInt(zf));
   };
 
-  func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
+  func getVolumes(credits : CreditsInfo, prices : PricesInfo, decimals : DecimalsInfo) : ValumesInfo {
     let volume_step = calculateVolumeStep(prices.bid_price);
+
+    let quote_credit : Float = Float.fromInt(credits.quote_credit);
+    // calculate multiplicator which help to normalize the price before create
+    // the order to the smallest units of the tokens
+    let decimals_multiplicator : Float = Float.pow(10, Float.fromInt64(Int32.toInt64((Int32.fromNat32(decimals.quote_decimals) - Int32.fromNat32(decimals.base_decimals)))));
+
     {
-      bid_volume = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price) / volume_step) * volume_step);
+      bid_volume = Int.abs((Float.toInt(quote_credit / prices.bid_price * decimals_multiplicator) / volume_step) * volume_step);
       ask_volume = Int.abs((credits.base_credit / volume_step) * volume_step);
     }
   };
 
   public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {
-    #Ok : (OrderInfo, OrderInfo);
+    #Ok : (OrderInfo, OrderInfo, Float);
     #Err : U.ExecutionError;
   } {
     let current_rate_result = await* xrc.getExchangeRate(pair.base_symbol, pair.quote_symbol);
 
-    // calculate multiplicator which help to normalize the price before create
-    // the order to the smallest units of the tokens
-    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.base_decimals) - Int32.fromNat32(pair.quote_decimals);
-
     switch (current_rate_result) {
       case (#Ok(current_rate)) {
-        let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
-        let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
+        let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate);
+        let { bid_volume; ask_volume } = getVolumes(
+          { base_credit = pair.base_credits; quote_credit = pair.quote_credits },
+          { bid_price; ask_price },
+          { base_decimals = pair.base_decimals; quote_decimals = pair.quote_decimals },
+        );
 
         let bid_order : OrderInfo = {
           amount = bid_volume;
@@ -112,7 +117,7 @@ module MarketMaker {
         let replace_orders_result = await* ac.replaceOrders(pair.base_principal, bid_order, ask_order);
 
         switch (replace_orders_result) {
-          case (#Ok(_)) #Ok(bid_order, ask_order);
+          case (#Ok(_)) #Ok(bid_order, ask_order, current_rate);
           case (#Err(err)) {
             switch (err) {
               case (#placement(err)) {

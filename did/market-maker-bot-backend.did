@@ -17,11 +17,10 @@ type MarketPair =
  };
 type MarketMakerBot = 
  service {
-   addCredits: () -> ();
    executeMarketMaking: () -> ();
-   getBotState: () -> (BotState);
-   getHistory: () -> (vec HistoryItemType);
-   getPairsList: () -> (vec MarketPair);
+   getBotState: () -> (BotState) query;
+   getHistory: () -> (vec HistoryItemType) query;
+   getPairsList: () -> (vec MarketPair) query;
    init: () -> ();
    startBot: () -> (BotState);
    stopBot: () -> (BotState);
@@ -32,13 +31,7 @@ type HistoryItemType =
    bidOrder: OrderInfo;
    message: text;
    pair: MarketPair;
+   rate: float64;
  };
 type BotState = record {running: bool;};
-/// A module which contain implementation of market maker orchestrationg
-/// Contain all public methods for bot which helps to manage bot state
-/// Manage list of trading pairs, have only one fixed quote asset for all pairs
-/// 
-/// Copyright: 2023-2024 MR Research AG
-/// Main author: Dmitriy Panchenko
-/// Contributors: Timo Hanke
 service : (principal, principal) -> MarketMakerBot

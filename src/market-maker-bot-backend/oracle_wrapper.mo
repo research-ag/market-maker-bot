@@ -4,6 +4,9 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
+import Float "mo:base/Float";
+import Nat32 "mo:base/Nat32";
+import Int64 "mo:base/Int64";
 import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
 import OracleDefinitions "./oracle_definitions";
@@ -17,8 +20,13 @@ module {
   public class Self(oracle_principal : Principal) {
     let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
 
+    func calculateRate(rate : Nat64, decimals : Nat32) : Float {
+      let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(decimals)));
+      Float.fromInt64(Int64.fromNat64(rate)) / Float.pow(10, exponent);
+    };
+
     public func getExchangeRate(base : Text, quote : Text) : async* {
-      #Ok : CurrencyRate;
+      #Ok : Float;
       #Err : {
         #ErrorGetRates;
       };
@@ -43,15 +51,10 @@ module {
 
       switch (response) {
         case (#Ok(success)) {
-          let currency_rate : CurrencyRate = {
-            rate = success.rate;
-            decimals = success.metadata.decimals;
-          };
-
-          return #Ok(currency_rate);
+          #Ok(calculateRate(success.rate, success.metadata.decimals));
         };
         case (#Err(_)) {
-          return #Err(#ErrorGetRates);
+          #Err(#ErrorGetRates);
         };
       };
     };
