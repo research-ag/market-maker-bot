@@ -221,11 +221,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         let execute_result = await* MarketMaker.execute(market_pair, oracle, auction);
 
         switch (execute_result) {
-          case (#Ok(bid_order, ask_order)) {
-            addHistoryItem(market_pair, bid_order, ask_order, 0, "OK");
+          case (#Ok(bid_order, ask_order, rate)) {
+            addHistoryItem(market_pair, bid_order, ask_order, rate, "OK");
           };
-          case (#Err(err)) {
-            addHistoryItem(market_pair, empty_order, empty_order, 0, U.getErrorMessage(err));
+          case (#Err(bid_order, ask_order, rate, err)) {
+            addHistoryItem(market_pair, bid_order, ask_order, rate, U.getErrorMessage(err));
           };
         };
       };
