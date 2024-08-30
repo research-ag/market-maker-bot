@@ -36,13 +36,11 @@ export const PairsTable = () => {
                 <InfoItem content={pair.base_symbol} withCopy={true} />
                 <InfoItem content={pair.base_principal.toText()} withCopy={true} />
                 <InfoItem content={`Decimals ${pair.base_decimals}`} />
-                <InfoItem content={`Credits ${displayWithDecimals(pair.base_credits, pair.base_decimals)}`} />
               </td>
               <td>
                 <InfoItem content={pair.quote_symbol} withCopy={true} />
                 <InfoItem content={pair.quote_principal.toText()} withCopy={true} />
                 <InfoItem content={`Decimals ${pair.quote_decimals}`} />
-                <InfoItem content={`Credits ${displayWithDecimals(pair.quote_credits, pair.quote_decimals)}`} />
               </td>
               <td>{pair.spread_value}</td>
             </tr>
