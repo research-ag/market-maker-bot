@@ -19,9 +19,9 @@ type MarketMakerBot =
  service {
    addCredits: () -> ();
    executeMarketMaking: () -> ();
-   getBotState: () -> (BotState);
-   getHistory: () -> (vec HistoryItemType);
-   getPairsList: () -> (vec MarketPair);
+   getBotState: () -> (BotState) query;
+   getHistory: () -> (vec HistoryItemType) query;
+   getPairsList: () -> (vec MarketPair) query;
    init: () -> ();
    startBot: () -> (BotState);
    stopBot: () -> (BotState);

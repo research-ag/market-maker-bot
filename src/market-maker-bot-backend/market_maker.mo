@@ -70,7 +70,7 @@ module MarketMaker {
     };
   };
 
-  func calculateVolumeStep(price : Float) : Int {
+  func calculateVolumeStep(price : Float) : Nat {
     let p = price / Float.fromInt(10 ** 3);
     if (p >= 1) return 1;
     let zf = - Float.log(p) / 2.302_585_092_994_045;
@@ -79,9 +79,11 @@ module MarketMaker {
 
   func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
     let volume_step = calculateVolumeStep(prices.bid_price);
+    let truncToStep : Nat -> Nat = func(x) = x - x % volume_step;
+    let bid_volume : Nat = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price)));
     {
-      bid_volume = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price) / volume_step) * volume_step);
-      ask_volume = Int.abs((credits.base_credit / volume_step) * volume_step);
+      bid_volume = truncToStep(bid_volume);
+      ask_volume = truncToStep(credits.base_credit);
     }
   };
 
@@ -93,7 +95,7 @@ module MarketMaker {
 
     // calculate multiplicator which help to normalize the price before create
     // the order to the smallest units of the tokens
-    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.base_decimals) - Int32.fromNat32(pair.quote_decimals);
+    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.quote_decimals) - Int32.fromNat32(pair.base_decimals);
 
     switch (current_rate_result) {
       case (#Ok(current_rate)) {
