@@ -101,17 +101,23 @@ module {
       #Ok;
       #Err : {
         #CancellationError;
+        #UnknownError;
       };
     } {
-      let response = await ac.manageOrders(
-        ?(#all(?tokens)), // cancell all orders for tokens
-        [],
-      );
+      try {
+        let response = await ac.manageOrders(
+          ?(#all(?tokens)), // cancell all orders for tokens
+          [],
+        );
 
-      switch (response) {
-        case (#Ok(_)) #Ok;
-        case (#Err(_)) #Err(#CancellationError);
-      };
+        switch (response) {
+          case (#Ok(_)) #Ok;
+          case (#Err(_)) #Err(#CancellationError);
+        };
+      } catch (e) {
+        Debug.print(Error.message(e));
+        #Err(#UnknownError)
+      }
     };
 
     public func notify(token : Principal) : async* {

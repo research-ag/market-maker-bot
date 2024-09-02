@@ -6,7 +6,7 @@
 
 import Float "mo:base/Float";
 import Nat32 "mo:base/Nat32";
-import Int64 "mo:base/Int64";
+import Nat64 "mo:base/Nat64";
 import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
 import OracleDefinitions "./oracle_definitions";
@@ -16,8 +16,8 @@ module {
     let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
 
     func calculateRate(rate : Nat64, decimals : Nat32) : Float {
-      let exponent : Float = Float.fromInt64(Int64.fromNat64(Nat32.toNat64(decimals)));
-      Float.fromInt64(Int64.fromNat64(rate)) / Float.pow(10, exponent);
+      let exponent : Float = Float.fromInt(Nat32.toNat(decimals));
+      Float.fromInt(Nat64.toNat(rate)) / Float.pow(10, exponent);
     };
 
     public func getExchangeRate(base : Text, quote : Text) : async* {

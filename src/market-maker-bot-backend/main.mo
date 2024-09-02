@@ -67,42 +67,36 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       #UnknownError;
     });
   } {
-    try {
-      if (is_initializing == false) {
-        is_initializing := true;
-        if (is_initialized == false) {
-          Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-          quote_token := ?(await* auction.getQuoteToken());
-          supported_tokens := await* auction.getSupportedTokens();
+    if (is_initializing) return #Err(#InitializingInProgressError);
+    if (is_initialized) return #Err(#AlreadyInitializedError);
 
-          switch (quote_token) {
-            case (?quote_token) {
-              for (token in supported_tokens.vals()) {
-                if (Principal.equal(token, quote_token) == false) {
-                  switch (AssocList.find(tokens_info, token, Principal.equal)) {
-                    case (?_) {
-                      market_pairs := Array.append(market_pairs, [getMarketPair(token, quote_token, null)]);
-                    };
-                    case (_) {};
-                  };
+    try {
+      is_initializing := true;
+      Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
+      quote_token := ?(await* auction.getQuoteToken());
+      supported_tokens := await* auction.getSupportedTokens();
+
+      switch (quote_token) {
+        case (?quote_token) {
+          for (token in supported_tokens.vals()) {
+            if (Principal.equal(token, quote_token) == false) {
+              switch (AssocList.find(tokens_info, token, Principal.equal)) {
+                case (?_) {
+                  market_pairs := Array.append(market_pairs, [getMarketPair(token, quote_token, null)]);
                 };
+                case (_) {};
               };
-              is_initialized := true;
-              is_initializing := false;
-              return #Ok(getState());
             };
-            case (null) {
-              is_initializing := false;
-              return #Err(#UnknownQuoteTokenError);
-            };
-          }
-        } else {
+          };
+          is_initialized := true;
           is_initializing := false;
-          return #Err(#AlreadyInitializedError);
+          return #Ok(getState());
         };
-      } else {
-        return #Err(#InitializingInProgressError);
-      };
+        case (null) {
+          is_initializing := false;
+          return #Err(#UnknownQuoteTokenError);
+        };
+      }
     } catch (_) {
       is_initializing := false;
       return #Err(#UnknownError);
