@@ -50,7 +50,7 @@ module {
       try {
         let credits : [(Principal, Auction.CreditInfo)] = await ac.queryCredits();
 
-        Debug.print("Credits " # debug_show(credits));
+        Debug.print("Credits " # debug_show (credits));
 
         for (credit in credits.vals()) {
           map := AssocList.replace(map, credit.0, Principal.equal, ?credit.1.total).0;
@@ -67,10 +67,19 @@ module {
       #Err : Auction.ManageOrdersError;
     } {
       try {
+        let placements : [{
+          #ask : (Principal, Nat, Float);
+          #bid : (Principal, Nat, Float);
+        }] = switch (bid.amount, ask.amount) {
+          case (0, 0) [];
+          case (0, _) [#ask(token, ask.amount, ask.price)];
+          case (_, 0) [#bid(token, bid.amount, bid.price)];
+          case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
+        };
 
         let response = await ac.manageOrders(
-          ?(#all(?[token])), // cancell all orders for tokens
-          [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
+          ?(#all(?[token])), // cancel all orders for tokens
+          placements,
         );
 
         switch (response) {
@@ -94,7 +103,7 @@ module {
         };
       } catch (_) {
         #Err(#UnknownError);
-      }
+      };
     };
 
     public func removeOrders(tokens : [Principal]) : async* {
@@ -116,8 +125,8 @@ module {
         };
       } catch (e) {
         Debug.print(Error.message(e));
-        #Err(#UnknownError)
-      }
+        #Err(#UnknownError);
+      };
     };
 
     public func notify(token : Principal) : async* {
@@ -134,7 +143,7 @@ module {
       } catch (e) {
         Debug.print(Error.message(e));
         #Err;
-      }
+      };
     };
-  }
-}
+  };
+};
