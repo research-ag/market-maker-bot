@@ -48,7 +48,6 @@ module MarketMaker {
     spread_value : Float;
   };
 
-
   let digits : Float = 5;
 
   func limitPrecision(x : Float) : Float {
@@ -81,7 +80,7 @@ module MarketMaker {
     {
       bid_volume = truncToStep(bid_volume);
       ask_volume = truncToStep(credits.base_credit);
-    }
+    };
   };
 
   public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {

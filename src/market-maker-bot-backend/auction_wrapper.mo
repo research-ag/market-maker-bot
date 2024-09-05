@@ -5,10 +5,12 @@
 /// Contributors: Timo Hanke
 
 import AssocList "mo:base/AssocList";
-import Principal "mo:base/Principal";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
+import List "mo:base/List";
 import Prim "mo:prim";
+import Principal "mo:base/Principal";
+
 import Auction "./auction_definitions";
 
 module {
@@ -20,9 +22,7 @@ module {
   public class Self(auction_principal : Principal) {
     let ac : Auction.Self = actor (Principal.toText(auction_principal));
 
-    public func getAuction() : (Auction.Self) {
-      ac;
-    };
+    public func getAuction() : (Auction.Self) = ac;
 
     public func getQuoteToken() : async* (Principal) {
       try {
@@ -46,14 +46,14 @@ module {
     };
 
     public func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
-      var map : AssocList.AssocList<Principal, Nat> = null;
+      var map : List.List<(Principal, Nat)> = null;
       try {
         let credits : [(Principal, Auction.CreditInfo)] = await ac.queryCredits();
 
         Debug.print("Credits " # debug_show (credits));
 
         for (credit in credits.vals()) {
-          map := AssocList.replace(map, credit.0, Principal.equal, ?credit.1.total).0;
+          map := List.push<(Principal, Nat)>((credit.0, credit.1.total), map);
         };
       } catch (e) {
         Debug.print(Error.message(e));
@@ -66,41 +66,24 @@ module {
       #Ok : [Nat];
       #Err : Auction.ManageOrdersError;
     } {
-      try {
-        let placements : [{
-          #ask : (Principal, Nat, Float);
-          #bid : (Principal, Nat, Float);
-        }] = switch (bid.amount, ask.amount) {
-          case (0, 0) [];
-          case (0, _) [#ask(token, ask.amount, ask.price)];
-          case (_, 0) [#bid(token, bid.amount, bid.price)];
-          case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
-        };
+      // TODO take minimum order rules into account
+      let placeAsk = ask.amount > 0;
+      let placeBid = bid.amount > 0;
 
-        let response = await ac.manageOrders(
+      let placements : [{
+        #ask : (Principal, Nat, Float);
+        #bid : (Principal, Nat, Float);
+      }] = switch (placeBid, placeAsk) {
+        case (false, false) [];
+        case (false, _) [#ask(token, ask.amount, ask.price)];
+        case (_, false) [#bid(token, bid.amount, bid.price)];
+        case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
+      };
+      try {
+        await ac.manageOrders(
           ?(#all(?[token])), // cancel all orders for tokens
           placements,
         );
-
-        switch (response) {
-          case (#Ok(success)) #Ok(success);
-          case (#Err(error)) {
-            switch (error) {
-              case (#cancellation(_)) {
-                let response = await ac.manageOrders(
-                  ?(#orders([])),
-                  [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)],
-                );
-
-                switch (response) {
-                  case (#Ok(success)) #Ok(success);
-                  case (#Err(error)) #Err(error);
-                };
-              };
-              case (_) #Err(error);
-            };
-          };
-        };
       } catch (_) {
         #Err(#UnknownError);
       };
@@ -115,7 +98,7 @@ module {
     } {
       try {
         let response = await ac.manageOrders(
-          ?(#all(?tokens)), // cancell all orders for tokens
+          ?(#all(?tokens)), // cancel all orders for tokens
           [],
         );
 

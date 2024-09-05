@@ -19,8 +19,8 @@ module PriceMakerModule {
     let adjusted_spread = base_spread * (1 + Float.fromInt(market_volatility));
 
     let adjusted_bid_price : Float = last_trade_price * (1 - adjusted_spread * supply_ratio * Float.fromInt(supply_factor));
-    let adjusted_ask_price : Float  = last_trade_price * (1 + adjusted_spread * demand_ratio * Float.fromInt(demand_factor));
+    let adjusted_ask_price : Float = last_trade_price * (1 + adjusted_spread * demand_ratio * Float.fromInt(demand_factor));
 
     (adjusted_bid_price, adjusted_ask_price);
   };
-}
+};
