@@ -31,22 +31,16 @@ module {
       case (#UnknownAssetError) "Unknown asset error";
       case (#NoCreditError) "No credit error";
       case (#TooLowOrderError) "Too low order error";
-    }
+    };
   };
 
   public func getByKeyOrDefault<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, default : K) : (K) {
-    let _value : ?K = AssocList.find<T, K>(list, key, equal);
-    switch (_value) {
-      case (?_value) _value;
-      case (null) default;
-    }
+    let ?_value = AssocList.find<T, K>(list, key, equal) else return default;
+    _value;
   };
 
   public func getByKeyOrTrap<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, message : Text) : (K) {
-    let _value : ?K = AssocList.find<T, K>(list, key, equal);
-    switch (_value) {
-      case (?_value) _value;
-      case (null) Prim.trap(message);
-    }
+    let ?_value = AssocList.find<T, K>(list, key, equal) else Prim.trap(message);
+    _value;
   };
-}
+};
