@@ -52,5 +52,5 @@ module {
   };
   public type Self = actor {
     get_exchange_rate : shared GetExchangeRateRequest -> async GetExchangeRateResult;
-  }
-}
+  };
+};

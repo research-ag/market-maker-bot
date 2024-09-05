@@ -76,5 +76,5 @@ actor CustomXRC {
       quote_asset = req.quote_asset;
       base_asset = req.base_asset;
     });
-  }
-}
+  };
+};

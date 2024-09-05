@@ -32,14 +32,14 @@ module {
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
     manageOrders : shared (
-        ?{
-          #all : ?[Principal];
-          #orders : [{ #ask : OrderId; #bid : OrderId }];
-        },
-        [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
-      ) -> async ManageOrdersResult;
+      ?{
+        #all : ?[Principal];
+        #orders : [{ #ask : OrderId; #bid : OrderId }];
+      },
+      [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
+    ) -> async ManageOrdersResult;
     queryCredits : shared query () -> async [(Principal, CreditInfo)];
     getQuoteLedger : shared query () -> async (Principal);
-    icrc84_supported_tokens: () -> async ([Principal]);
- }
-}
+    icrc84_supported_tokens : () -> async ([Principal]);
+  };
+};

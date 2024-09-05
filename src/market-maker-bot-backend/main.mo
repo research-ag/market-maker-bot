@@ -57,7 +57,6 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-
   public func init() : async {
     #Ok : (BotState);
     #Err : ({
@@ -96,7 +95,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
           is_initializing := false;
           return #Err(#UnknownQuoteTokenError);
         };
-      }
+      };
     } catch (_) {
       is_initializing := false;
       return #Err(#UnknownError);
@@ -104,7 +103,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public type BotState = {
-    timer_interval: Nat;
+    timer_interval : Nat;
     running : Bool;
     initialized : Bool;
     initializing : Bool;
@@ -118,14 +117,16 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   system func postupgrade() {
     Debug.print("Postupgrade");
-    ignore Timer.setTimer<system>(#seconds (0), func(): async () {
-      Debug.print("Init fired");
-      ignore await init();
-    });
+    ignore Timer.setTimer<system>(
+      #seconds(0),
+      func() : async () {
+        Debug.print("Init fired");
+        ignore await init();
+      },
+    );
   };
 
-
-  func addHistoryItem(pair: MarketMakerModule.MarketPair, bidOrder : ?MarketMakerModule.OrderInfo, askOrder : ?MarketMakerModule.OrderInfo, rate : ?Float, message : Text) : () {
+  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : ?MarketMakerModule.OrderInfo, askOrder : ?MarketMakerModule.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, rate, message);
     history := Array.append(
       history,
@@ -182,13 +183,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   func notifyCreditUpdates() : async* () {
     let supported_tokens = await* auction.getSupportedTokens();
-
-    let size = supported_tokens.size();
-    var i : Nat = 0;
-
-    while (i < size) {
-      ignore await* auction.notify(supported_tokens[i]);
-      i := i + 1;
+    for (token in supported_tokens.vals()) {
+      ignore await* auction.notify(token);
     };
   };
 
@@ -210,7 +206,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       case (null) {
         return token_credits;
       };
-    }
+    };
 
   };
 
@@ -259,9 +255,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     bot_timer_interval := timer_interval;
     runTimer<system>();
 
-    ignore Timer.setTimer<system>(#seconds (0), func(): async () {
-      await executeBot();
-    });
+    ignore Timer.setTimer<system>(
+      #seconds(0),
+      func() : async () {
+        await executeBot();
+      },
+    );
 
     #Ok(getState());
   };
@@ -304,7 +303,6 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
     while (i < size) {
       let market_pair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, token_credits);
-
 
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {
@@ -351,5 +349,5 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   if (is_running) {
     runTimer<system>();
-  }
+  };
 };
