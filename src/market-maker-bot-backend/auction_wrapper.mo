@@ -7,6 +7,8 @@
 import AssocList "mo:base/AssocList";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
+import Float "mo:base/Float";
+import Int "mo:base/Int";
 import List "mo:base/List";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
@@ -66,9 +68,8 @@ module {
       #Ok : [Nat];
       #Err : Auction.ManageOrdersError;
     } {
-      // TODO take minimum order rules into account
       let placeAsk = ask.amount > 0;
-      let placeBid = bid.amount > 0;
+      let placeBid = Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000;
 
       let placements : [{
         #ask : (Principal, Nat, Float);
