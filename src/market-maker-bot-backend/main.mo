@@ -121,6 +121,9 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     ignore Timer.setTimer<system>(#seconds (0), func(): async () {
       Debug.print("Init fired");
       ignore await init();
+      if (is_running) {
+        runTimer<system>();
+      }
     });
   };
 
@@ -352,8 +355,4 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       bot_timer := 0;
     };
   };
-
-  if (is_running) {
-    runTimer<system>();
-  }
 };
