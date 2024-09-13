@@ -284,16 +284,20 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       return #Err(#AlreadyStopedError);
     };
 
-    let remove_orders_result = await* cancelAllOrders();
-    switch (remove_orders_result) {
-      case (#Ok) {
-        is_running := false;
-        stopTimer();
-        return #Ok(getState());
+    try {
+      let remove_orders_result = await* cancelAllOrders();
+      switch (remove_orders_result) {
+        case (#Ok) {
+          is_running := false;
+          stopTimer();
+          return #Ok(getState());
+        };
+        case (#Err) {
+          return #Err(#CancelOrdersError);
+        };
       };
-      case (#Err) {
-        return #Err(#CancelOrdersError);
-      };
+    } catch (_) {
+      return #Err(#CancelOrdersError);
     };
   };
 
