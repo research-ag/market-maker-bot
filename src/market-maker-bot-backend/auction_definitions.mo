@@ -31,6 +31,7 @@ module {
   public type ManageOrdersResult = { #Ok : [OrderId]; #Err : ManageOrdersError };
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
+    icrc84_credit : shared (Principal) -> async Int;
     manageOrders : shared (
       ?{
         #all : ?[Principal];

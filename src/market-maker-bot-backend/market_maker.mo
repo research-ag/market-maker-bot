@@ -56,7 +56,7 @@ module MarketMaker {
     Float.floor(x * 10 ** e1) * 10 ** -e1;
   };
 
-  func getPrices(spread : Float, currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
+  public func getPrices(spread : Float, currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
     // normalize the price before create the order to the smallest units of the tokens
     let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
 

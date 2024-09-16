@@ -43,4 +43,13 @@ module {
     let ?_value = AssocList.find<T, K>(list, key, equal) else Prim.trap(message);
     _value;
   };
+
+  public func require<T>(o : ?T) : T = requireMsg(o, "Required value is null");
+
+  public func requireMsg<T>(opt : ?T, message : Text) : T {
+    switch (opt) {
+      case (?o) o;
+      case (null) Prim.trap(message);
+    };
+  };
 };
