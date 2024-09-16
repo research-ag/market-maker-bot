@@ -119,6 +119,8 @@ module MarketMaker {
                   case (#UnknownAsset) #Err(#UnknownAssetError, ?bid_order, ?ask_order, ?current_rate);
                   case (#NoCredit) #Err(#NoCreditError, ?bid_order, ?ask_order, ?current_rate);
                   case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?ask_order, ?current_rate);
+                  case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?bid_order, ?ask_order, ?current_rate);
+                  case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?ask_order, ?current_rate);
                 };
               };
               case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);

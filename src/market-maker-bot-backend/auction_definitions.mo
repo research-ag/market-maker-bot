@@ -7,18 +7,20 @@
 module {
   public type CreditInfo = { total : Nat; locked : Nat; available : Nat };
   public type ManageOrdersError = {
+    #UnknownPrincipal;
+    #cancellation : { index : Nat; error : { #UnknownAsset; #UnknownOrder } };
     #placement : {
+      index : Nat;
       error : {
         #ConflictingOrder : ({ #ask; #bid }, ?OrderId);
-        #UnknownAsset;
         #NoCredit;
         #TooLowOrder;
+        #UnknownAsset;
+        #PriceDigitsOverflow : { maxDigits : Nat };
+        #VolumeStepViolated : { baseVolumeStep : Nat };
       };
-      index : Nat;
     };
-    #UnknownPrincipal;
     #UnknownError;
-    #cancellation : { error : { #UnknownAsset; #UnknownOrder }; index : Nat };
   };
   public type NotifyResult = {
     #Ok : { credit_inc : Nat; credit : Int; deposit_inc : Nat };

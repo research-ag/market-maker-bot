@@ -5,6 +5,7 @@
 /// Contributors: Timo Hanke
 
 import AssocList "mo:base/AssocList";
+import Nat "mo:base/Nat";
 import Prim "mo:prim";
 
 module {
@@ -18,6 +19,8 @@ module {
     #UnknownAssetError;
     #NoCreditError;
     #TooLowOrderError;
+    #VolumeStepViolated : { baseVolumeStep : Nat };
+    #PriceDigitsOverflow : { maxDigits : Nat };
   };
 
   public func getErrorMessage(error : ExecutionError) : Text {
@@ -31,6 +34,8 @@ module {
       case (#UnknownAssetError) "Unknown asset error";
       case (#NoCreditError) "No credit error";
       case (#TooLowOrderError) "Too low order error";
+      case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # Nat.toText(baseVolumeStep);
+      case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # Nat.toText(maxDigits);
     };
   };
 

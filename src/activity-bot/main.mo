@@ -203,11 +203,12 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     );
   };
 
-  public query func getHistory() : async ([HistoryModule.HistoryItemType]) {
-    let size = history.size();
+  public query func getHistory(limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
+    let size : Int = history.size() - skip;
+    if (size < 1) return [];
     Array.tabulate<HistoryModule.HistoryItemType>(
-      size,
-      func(i : Nat) : HistoryModule.HistoryItemType = history[i].getItem(),
+      Nat.min(Int.abs(size), limit),
+      func(i : Nat) : HistoryModule.HistoryItemType = history[i + skip].getItem(),
     );
   };
 
@@ -282,20 +283,18 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     };
   };
 
-  public func executeActiviyBot() : async () {
+  public func executeActivityBot() : async () {
     var i : Nat = 0;
     let size = market_pairs.size();
     let quote_credits = await* getQuoteCredit();
 
     while (i < size) {
-      let pair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, 0);
+      let pair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, quote_credits);
 
       if (quote_credits == 0) {
         addHistoryItem(pair, null, null, "Error processing pair: empty credits for " # Principal.toText(pair.quote_principal));
       } else {
-
         let current_rate_result = await* oracle.getExchangeRate(pair.base_symbol, pair.quote_symbol);
-
         // calculate multiplicator which help to normalize the price before create
         // the order to the smallest units of the tokens
         let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.quote_decimals) - Int32.fromNat32(pair.base_decimals);
@@ -305,7 +304,17 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
             // get ask price, because in activity bot we want to place higher bid values
             let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
             // bid minimum volume
-            let amount = (5000.0 / price) |> Float.ceil(_) |> Float.toInt(_) |> Int.abs(_);
+            func getBaseVolumeStep(price : Float) : Nat {
+              let p = price / Float.fromInt(1000);
+              if (p >= 1) return 1;
+              let zf = - Float.log(p) / 2.302_585_092_994_045;
+              Int.abs(10 ** Float.toInt(zf));
+            };
+            let volumeStep = getBaseVolumeStep(price);
+            var amount = (5000.0 / price) |> Float.ceil(_) |> Float.toInt(_) |> Int.abs(_);
+            if (amount % volumeStep > 0) {
+              amount += volumeStep - (amount % volumeStep);
+            };
 
             let bid_order : MarketMaker.OrderInfo = { amount; price };
 
@@ -321,6 +330,8 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
                       case (#UnknownAsset) #Err(#UnknownAssetError, ?bid_order, ?current_rate);
                       case (#NoCredit) #Err(#NoCreditError, ?bid_order, ?current_rate);
                       case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?current_rate);
+                      case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?bid_order, ?current_rate);
+                      case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?current_rate);
                     };
                   };
                   case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?current_rate);
@@ -347,7 +358,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       return;
     };
 
-    await executeActiviyBot();
+    await executeActivityBot();
   };
 
   func runTimer<system>() : () {
