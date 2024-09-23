@@ -6,7 +6,10 @@
       "init_arg": "(principal \"z4s7u-byaaa-aaaao-a3paa-cai\", principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")",
       "did": "did/market-maker-bot-backend.did",
       "declarations": {
-        "bindings": ["js", "ts"],
+        "bindings": [
+          "js",
+          "ts"
+        ],
         "output": "./src/declarations/market-maker-bot-backend"
       }
     },
@@ -30,7 +33,7 @@
   "defaults": {
     "build": {
       "args": "",
-      "packtool": ""
+      "packtool": "mops sources"
     }
   },
   "output_env_file": ".env",

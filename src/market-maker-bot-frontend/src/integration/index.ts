@@ -64,7 +64,7 @@ export const useGetHistory = () => {
   return useQuery(
     'getHistory',
     async () => {
-      return bot.getHistory();
+      return bot.getHistory(1000n, 0n);
     },
     {
       onError: (err: unknown) => {

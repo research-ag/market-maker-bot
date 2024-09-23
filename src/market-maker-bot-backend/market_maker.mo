@@ -36,7 +36,7 @@ module MarketMaker {
     price : Float;
   };
 
-  public type MarketPair = {
+  public type MarketPairShared = {
     base_principal : Principal;
     base_symbol : Text;
     base_decimals : Nat32;
@@ -48,12 +48,33 @@ module MarketMaker {
     spread_value : Float;
   };
 
+  public type MarketPair = {
+    base_principal : Principal;
+    base_symbol : Text;
+    base_decimals : Nat32;
+    var base_credits : Nat;
+    quote_principal : Principal;
+    quote_symbol : Text;
+    quote_decimals : Nat32;
+    var quote_credits : Nat;
+    var spread_value : Float;
+  };
+
   let digits : Float = 5;
 
   func limitPrecision(x : Float) : Float {
     let e = - Float.log(x) / 2.302_585_092_994_045;
     let e1 = Float.floor(e) + digits;
     Float.floor(x * 10 ** e1) * 10 ** -e1;
+  };
+
+  public func sharePair(pair : MarketPair) : MarketPairShared {
+    {
+      pair with
+      base_credits = pair.base_credits;
+      quote_credits = pair.quote_credits;
+      spread_value = pair.spread_value;
+    };
   };
 
   public func getPrices(spread : Float, currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
