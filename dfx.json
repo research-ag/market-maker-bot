@@ -10,6 +10,11 @@
         "output": "./src/declarations/market-maker-bot-backend"
       }
     },
+    "activity-bot-backend": {
+      "main": "src/activity-bot/main.mo",
+      "type": "motoko",
+      "init_arg": "(opt principal \"z4s7u-byaaa-aaaao-a3paa-cai\", opt principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")"
+    },
     "market-maker-bot-frontend": {
       "dependencies": [
         "market-maker-bot-backend"

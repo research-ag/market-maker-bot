@@ -47,6 +47,10 @@ module {
       };
     };
 
+    public func getCredit(token : Principal) : async* Int {
+      await ac.icrc84_credit(token);
+    };
+
     public func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
       var map : List.List<(Principal, Nat)> = null;
       try {

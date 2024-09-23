@@ -41,9 +41,10 @@ module {
             break l;
           };
         };
-        switch (rate) {
-          case (0) #Err(#ErrorGetRates);
-          case (_) #Ok(rate);
+        if (rate == 0) {
+          #Err(#ErrorGetRates);
+        } else {
+          #Ok(rate);
         };
       } else {
         let request : OracleDefinitions.GetExchangeRateRequest = {

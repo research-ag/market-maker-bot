@@ -5,6 +5,7 @@
 /// Contributors: Timo Hanke
 
 import AssocList "mo:base/AssocList";
+import Nat "mo:base/Nat";
 import Prim "mo:prim";
 
 module {
@@ -18,6 +19,8 @@ module {
     #UnknownAssetError;
     #NoCreditError;
     #TooLowOrderError;
+    #VolumeStepViolated : { baseVolumeStep : Nat };
+    #PriceDigitsOverflow : { maxDigits : Nat };
   };
 
   public func getErrorMessage(error : ExecutionError) : Text {
@@ -31,6 +34,8 @@ module {
       case (#UnknownAssetError) "Unknown asset error";
       case (#NoCreditError) "No credit error";
       case (#TooLowOrderError) "Too low order error";
+      case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # Nat.toText(baseVolumeStep);
+      case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # Nat.toText(maxDigits);
     };
   };
 
@@ -42,5 +47,14 @@ module {
   public func getByKeyOrTrap<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, message : Text) : (K) {
     let ?_value = AssocList.find<T, K>(list, key, equal) else Prim.trap(message);
     _value;
+  };
+
+  public func require<T>(o : ?T) : T = requireMsg(o, "Required value is null");
+
+  public func requireMsg<T>(opt : ?T, message : Text) : T {
+    switch (opt) {
+      case (?o) o;
+      case (null) Prim.trap(message);
+    };
   };
 };
