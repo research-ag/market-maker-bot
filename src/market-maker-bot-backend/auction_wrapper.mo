@@ -69,7 +69,7 @@ module {
     };
 
     public func replaceOrders(token : Principal, bid : OrderInfo, ask : OrderInfo) : async* {
-      #Ok : [Nat];
+      #Ok : (orderIds : [Nat], quoteBalanceDelta : Int);
       #Err : Auction.ManageOrdersError;
     } {
       let placeAsk = ask.amount > 0;
@@ -85,10 +85,26 @@ module {
         case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
       };
       try {
-        await ac.manageOrders(
+        let bidQuoteDelta : Int = if (placeBid) {
+          let oldBids = await ac.queryTokenBids(token);
+          let oldBidQuoteVolume : Int = if (oldBids.size() > 0) {
+            oldBids[0].1.price * Float.fromInt(oldBids[0].1.volume) |> Float.toInt(Float.ceil(_));
+          } else {
+            0;
+          };
+          let newBidQuoteVolume : Int = bid.price * Float.fromInt(bid.amount) |> Float.toInt(Float.ceil(_));
+          oldBidQuoteVolume - newBidQuoteVolume;
+        } else {
+          0;
+        };
+        let res = await ac.manageOrders(
           ?(#all(?[token])), // cancel all orders for tokens
           placements,
         );
+        switch (res) {
+          case (#Ok orderIds) #Ok(orderIds, bidQuoteDelta);
+          case (#Err x) #Err(x);
+        };
       } catch (_) {
         #Err(#UnknownError);
       };

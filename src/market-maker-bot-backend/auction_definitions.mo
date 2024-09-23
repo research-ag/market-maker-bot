@@ -44,5 +44,6 @@ module {
     queryCredits : shared query () -> async [(Principal, CreditInfo)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
+    queryTokenBids : query (ledger : Principal) -> async [(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })];
   };
 };

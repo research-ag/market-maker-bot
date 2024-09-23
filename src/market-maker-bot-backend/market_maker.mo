@@ -131,7 +131,14 @@ module MarketMaker {
         let replace_orders_result = await* ac.replaceOrders(pair.base_principal, bid_order, ask_order);
 
         switch (replace_orders_result) {
-          case (#Ok(_)) #Ok(bid_order, ask_order, current_rate);
+          case (#Ok(_, quoteBalanceDelta)) {
+            if (quoteBalanceDelta >= 0) {
+              pair.quote_credits += Int.abs(quoteBalanceDelta);
+            } else {
+              pair.quote_credits -= Int.abs(quoteBalanceDelta);
+            };
+            #Ok(bid_order, ask_order, current_rate);
+          };
           case (#Err(err)) {
             switch (err) {
               case (#placement(err)) {
