@@ -22,6 +22,7 @@ import Tokens "./tokens";
 import OracleWrapper "./oracle_wrapper";
 import MarketMaker "./market_maker";
 import AuctionWrapper "./auction_wrapper";
+import Auction "./auction_definitions";
 import U "./utils";
 
 actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
@@ -125,7 +126,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         ignore await init();
         if (is_running) {
           runTimer<system>();
-        }
+        };
       },
     );
   };
@@ -190,6 +191,32 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     for (token in supported_tokens.vals()) {
       ignore await* auction.notify(token);
     };
+  };
+
+  public func queryBotCredits() : async [(Principal, { total : Nat; locked : Nat; available : Nat })] {
+    await auction.getAuction().queryCredits();
+  };
+
+  public func queryBotBids() : async [(
+    Nat,
+    {
+      icrc1Ledger : Principal;
+      price : Float;
+      volume : Nat;
+    },
+  )] {
+    await auction.getAuction().queryBids();
+  };
+
+  public func queryBotAsks() : async [(
+    Nat,
+    {
+      icrc1Ledger : Principal;
+      price : Float;
+      volume : Nat;
+    },
+  )] {
+    await auction.getAuction().queryAsks();
   };
 
   func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
@@ -334,6 +361,32 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
       i := i + 1;
     };
+  };
+
+  public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+    assert not is_running;
+    let src : Auction.Self = actor (Principal.toText(source_auction));
+    let dest : Auction.Self = actor (Principal.toText(dest_auction));
+    let destSubaccount = await dest.principalToSubaccount(Principal.fromActor(self));
+    ignore await src.manageOrders(? #all(null), []);
+    let credits = await src.queryCredits();
+    for ((_, acc) in credits.vals()) {
+      assert acc.locked == 0;
+    };
+    for ((token, acc) in credits.vals()) {
+      ignore await src.icrc84_withdraw({
+        to = { owner = dest_auction; subaccount = destSubaccount };
+        amount = acc.available;
+        token;
+        expected_fee = null;
+      });
+      try {
+        ignore await dest.icrc84_notify({ token });
+      } catch (_) {
+        // pass
+      };
+    };
+    "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
   func executeBot() : async () {

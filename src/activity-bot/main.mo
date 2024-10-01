@@ -15,6 +15,7 @@ import MarketMakerModule "../market-maker-bot-backend/market_maker";
 import Tokens "../market-maker-bot-backend/tokens";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import MarketMaker "../market-maker-bot-backend/market_maker";
+import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
 import U "../market-maker-bot-backend/utils";
 
@@ -192,6 +193,32 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     Int.abs(Int.max(0, credit));
   };
 
+  public func queryBotCredits() : async [(Principal, { total : Nat; locked : Nat; available : Nat })] {
+    await auction.getAuction().queryCredits();
+  };
+
+  public func queryBotBids() : async [(
+    Nat,
+    {
+      icrc1Ledger : Principal;
+      price : Float;
+      volume : Nat;
+    },
+  )] {
+    await auction.getAuction().queryBids();
+  };
+
+  public func queryBotAsks() : async [(
+    Nat,
+    {
+      icrc1Ledger : Principal;
+      price : Float;
+      volume : Nat;
+    },
+  )] {
+    await auction.getAuction().queryAsks();
+  };
+
   /// to make it faster let's not ask about credits here, just return paris list
   /// we will manage credits and funds limit in separate place, so here is we can just return existing data
   public query func getPairsList() : async ([MarketMaker.MarketPair]) {
@@ -281,6 +308,32 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     } catch (_) {
       return #Err(#CancelOrdersError);
     };
+  };
+
+  public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+    assert not is_running;
+    let src : Auction.Self = actor (Principal.toText(source_auction));
+    let dest : Auction.Self = actor (Principal.toText(dest_auction));
+    let destSubaccount = await dest.principalToSubaccount(Principal.fromActor(self));
+    ignore await src.manageOrders(? #all(null), []);
+    let credits = await src.queryCredits();
+    for ((_, acc) in credits.vals()) {
+      assert acc.locked == 0;
+    };
+    for ((token, acc) in credits.vals()) {
+      ignore await src.icrc84_withdraw({
+        to = { owner = dest_auction; subaccount = destSubaccount };
+        amount = acc.available;
+        token;
+        expected_fee = null;
+      });
+      try {
+        ignore await dest.icrc84_notify({ token });
+      } catch (_) {
+        // pass
+      };
+    };
+    "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
   public func executeActivityBot() : async () {
