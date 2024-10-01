@@ -193,32 +193,6 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     Int.abs(Int.max(0, credit));
   };
 
-  public func queryBotCredits() : async [(Principal, { total : Nat; locked : Nat; available : Nat })] {
-    await auction.getAuction().queryCredits();
-  };
-
-  public func queryBotBids() : async [(
-    Nat,
-    {
-      icrc1Ledger : Principal;
-      price : Float;
-      volume : Nat;
-    },
-  )] {
-    await auction.getAuction().queryBids();
-  };
-
-  public func queryBotAsks() : async [(
-    Nat,
-    {
-      icrc1Ledger : Principal;
-      price : Float;
-      volume : Nat;
-    },
-  )] {
-    await auction.getAuction().queryAsks();
-  };
-
   /// to make it faster let's not ask about credits here, just return paris list
   /// we will manage credits and funds limit in separate place, so here is we can just return existing data
   public query func getPairsList() : async ([MarketMaker.MarketPair]) {

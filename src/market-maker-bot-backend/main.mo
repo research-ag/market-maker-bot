@@ -193,32 +193,6 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func queryBotCredits() : async [(Principal, { total : Nat; locked : Nat; available : Nat })] {
-    await auction.getAuction().queryCredits();
-  };
-
-  public func queryBotBids() : async [(
-    Nat,
-    {
-      icrc1Ledger : Principal;
-      price : Float;
-      volume : Nat;
-    },
-  )] {
-    await auction.getAuction().queryBids();
-  };
-
-  public func queryBotAsks() : async [(
-    Nat,
-    {
-      icrc1Ledger : Principal;
-      price : Float;
-      volume : Nat;
-    },
-  )] {
-    await auction.getAuction().queryAsks();
-  };
-
   func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
     /// here will be logic for calculating available credits for each pair
     /// based on the current state of the auction, quote credit limit and already placed orders

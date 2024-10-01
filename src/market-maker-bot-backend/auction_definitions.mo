@@ -31,11 +31,6 @@ module {
   };
   public type OrderId = Nat;
   public type ManageOrdersResult = { #Ok : [OrderId]; #Err : ManageOrdersError };
-  type Order = {
-    icrc1Ledger : Principal;
-    price : Float;
-    volume : Nat;
-  };
   type WithdrawResult = {
     #Ok : {
       txid : Nat;
@@ -59,8 +54,6 @@ module {
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
     ) -> async ManageOrdersResult;
     queryCredits : shared query () -> async [(Principal, CreditInfo)];
-    queryBids : shared query () -> async [(OrderId, Order)];
-    queryAsks : shared query () -> async [(OrderId, Order)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
     icrc84_withdraw : ({
