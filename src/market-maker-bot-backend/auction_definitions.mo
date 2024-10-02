@@ -62,6 +62,5 @@ module {
       token : Principal;
       expected_fee : ?Nat;
     }) -> async WithdrawResult;
-    principalToSubaccount : (p : Principal) -> async ?Blob;
   };
 };
