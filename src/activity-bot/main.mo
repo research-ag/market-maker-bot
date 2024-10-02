@@ -1,15 +1,17 @@
-import AssocList "mo:base/AssocList";
 import Array "mo:base/Array";
+import AssocList "mo:base/AssocList";
+import Blob "mo:base/Blob";
+import Bool "mo:base/Bool";
+import Debug "mo:base/Debug";
+import Float "mo:base/Float";
 import Int "mo:base/Int";
 import Int32 "mo:base/Int32";
-import Timer "mo:base/Timer";
-import Float "mo:base/Float";
+import Nat "mo:base/Nat";
+import Nat8 "mo:base/Nat8";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
-import Debug "mo:base/Debug";
 import Text "mo:base/Text";
-import Bool "mo:base/Bool";
-import Nat "mo:base/Nat";
+import Timer "mo:base/Timer";
 
 import MarketMakerModule "../market-maker-bot-backend/market_maker";
 import Tokens "../market-maker-bot-backend/tokens";
@@ -287,8 +289,26 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     assert not is_running;
     let src : Auction.Self = actor (Principal.toText(source_auction));
-    let dest : Auction.Self = actor (Principal.toText(dest_auction));
-    let destSubaccount = await dest.principalToSubaccount(Principal.fromActor(self));
+
+    func toSubaccount(p : Principal) : Blob {
+      let bytes = Blob.toArray(Principal.toBlob(p));
+      let size = bytes.size();
+      assert size <= 29;
+      Array.tabulate<Nat8>(
+        32,
+        func(i : Nat) : Nat8 {
+          if (i + size < 31) {
+            0;
+          } else if (i + size == 31) {
+            Nat8.fromNat(size);
+          } else {
+            bytes[i + size - 32];
+          };
+        },
+      ) |> Blob.fromArray(_);
+    };
+    let destSubaccount = toSubaccount(Principal.fromActor(self));
+
     ignore await src.manageOrders(? #all(null), []);
     let credits = await src.queryCredits();
     for ((_, acc) in credits.vals()) {
@@ -296,16 +316,11 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     };
     for ((token, acc) in credits.vals()) {
       ignore await src.icrc84_withdraw({
-        to = { owner = dest_auction; subaccount = destSubaccount };
+        to = { owner = dest_auction; subaccount = ?destSubaccount };
         amount = acc.available;
         token;
         expected_fee = null;
       });
-      try {
-        ignore await dest.icrc84_notify({ token });
-      } catch (_) {
-        // pass
-      };
     };
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
