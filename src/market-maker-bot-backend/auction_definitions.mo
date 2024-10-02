@@ -31,6 +31,18 @@ module {
   };
   public type OrderId = Nat;
   public type ManageOrdersResult = { #Ok : [OrderId]; #Err : ManageOrdersError };
+  type WithdrawResult = {
+    #Ok : {
+      txid : Nat;
+      amount : Nat;
+    };
+    #Err : {
+      #BadFee : { expected_fee : Nat };
+      #CallLedgerError : { message : Text };
+      #InsufficientCredit : {};
+      #AmountBelowMinimum : {};
+    };
+  };
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
     icrc84_credit : shared (Principal) -> async Int;
@@ -45,5 +57,11 @@ module {
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
     queryTokenBids : query (ledger : Principal) -> async [(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })];
+    icrc84_withdraw : ({
+      to : { owner : Principal; subaccount : ?Blob };
+      amount : Nat;
+      token : Principal;
+      expected_fee : ?Nat;
+    }) -> async WithdrawResult;
   };
 };

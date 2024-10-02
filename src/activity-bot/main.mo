@@ -1,16 +1,18 @@
-import AssocList "mo:base/AssocList";
 import Array "mo:base/Array";
+import AssocList "mo:base/AssocList";
+import Blob "mo:base/Blob";
+import Bool "mo:base/Bool";
+import Debug "mo:base/Debug";
+import Float "mo:base/Float";
 import Int "mo:base/Int";
 import Int32 "mo:base/Int32";
 import List "mo:base/List";
-import Timer "mo:base/Timer";
-import Float "mo:base/Float";
+import Nat "mo:base/Nat";
+import Nat8 "mo:base/Nat8";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
-import Debug "mo:base/Debug";
 import Text "mo:base/Text";
-import Bool "mo:base/Bool";
-import Nat "mo:base/Nat";
+import Timer "mo:base/Timer";
 
 import Vec "mo:vector";
 
@@ -18,6 +20,7 @@ import MarketMakerModule "../market-maker-bot-backend/market_maker";
 import Tokens "../market-maker-bot-backend/tokens";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import MarketMaker "../market-maker-bot-backend/market_maker";
+import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
 import U "../market-maker-bot-backend/utils";
 
@@ -288,6 +291,45 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     } catch (_) {
       return #Err(#CancelOrdersError);
     };
+  };
+
+  public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+    assert not is_running;
+    let src : Auction.Self = actor (Principal.toText(source_auction));
+
+    func toSubaccount(p : Principal) : Blob {
+      let bytes = Blob.toArray(Principal.toBlob(p));
+      let size = bytes.size();
+      assert size <= 29;
+      Array.tabulate<Nat8>(
+        32,
+        func(i : Nat) : Nat8 {
+          if (i + size < 31) {
+            0;
+          } else if (i + size == 31) {
+            Nat8.fromNat(size);
+          } else {
+            bytes[i + size - 32];
+          };
+        },
+      ) |> Blob.fromArray(_);
+    };
+    let destSubaccount = toSubaccount(Principal.fromActor(self));
+
+    ignore await src.manageOrders(? #all(null), []);
+    let credits = await src.queryCredits();
+    for ((_, acc) in credits.vals()) {
+      assert acc.locked == 0;
+    };
+    for ((token, acc) in credits.vals()) {
+      ignore await src.icrc84_withdraw({
+        to = { owner = dest_auction; subaccount = ?destSubaccount };
+        amount = acc.available;
+        token;
+        expected_fee = null;
+      });
+    };
+    "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
   public func executeActivityBot() : async () {
