@@ -5,16 +5,17 @@
 /// Copyright: 2023-2024 MR Research AG
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
-
-import AssocList "mo:base/AssocList";
 import Array "mo:base/Array";
-import Timer "mo:base/Timer";
-import Float "mo:base/Float";
-import Principal "mo:base/Principal";
-import Debug "mo:base/Debug";
-import Text "mo:base/Text";
+import AssocList "mo:base/AssocList";
+import Blob "mo:base/Blob";
 import Bool "mo:base/Bool";
+import Debug "mo:base/Debug";
+import Float "mo:base/Float";
 import Nat "mo:base/Nat";
+import Nat8 "mo:base/Nat8";
+import Principal "mo:base/Principal";
+import Text "mo:base/Text";
+import Timer "mo:base/Timer";
 
 import MarketMakerModule "./market_maker";
 import HistoryModule "./history";
@@ -22,6 +23,7 @@ import Tokens "./tokens";
 import OracleWrapper "./oracle_wrapper";
 import MarketMaker "./market_maker";
 import AuctionWrapper "./auction_wrapper";
+import Auction "./auction_definitions";
 import U "./utils";
 
 actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
@@ -125,7 +127,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         ignore await init();
         if (is_running) {
           runTimer<system>();
-        }
+        };
       },
     );
   };
@@ -334,6 +336,45 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
       i := i + 1;
     };
+  };
+
+  public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+    assert not is_running;
+    let src : Auction.Self = actor (Principal.toText(source_auction));
+
+    func toSubaccount(p : Principal) : Blob {
+      let bytes = Blob.toArray(Principal.toBlob(p));
+      let size = bytes.size();
+      assert size <= 29;
+      Array.tabulate<Nat8>(
+        32,
+        func(i : Nat) : Nat8 {
+          if (i + size < 31) {
+            0;
+          } else if (i + size == 31) {
+            Nat8.fromNat(size);
+          } else {
+            bytes[i + size - 32];
+          };
+        },
+      ) |> Blob.fromArray(_);
+    };
+    let destSubaccount = toSubaccount(Principal.fromActor(self));
+
+    ignore await src.manageOrders(? #all(null), []);
+    let credits = await src.queryCredits();
+    for ((_, acc) in credits.vals()) {
+      assert acc.locked == 0;
+    };
+    for ((token, acc) in credits.vals()) {
+      ignore await src.icrc84_withdraw({
+        to = { owner = dest_auction; subaccount = ?destSubaccount };
+        amount = acc.available;
+        token;
+        expected_fee = null;
+      });
+    };
+    "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
   func executeBot() : async () {
