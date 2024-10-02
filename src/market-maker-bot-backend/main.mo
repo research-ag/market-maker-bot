@@ -6,7 +6,6 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 import Array "mo:base/Array";
-import AssocList "mo:base/AssocList";
 import Blob "mo:base/Blob";
 import Bool "mo:base/Bool";
 import Debug "mo:base/Debug";
@@ -19,13 +18,14 @@ import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
-import MarketMakerModule "./market_maker";
-import HistoryModule "./history";
-import Tokens "./tokens";
-import OracleWrapper "./oracle_wrapper";
-import MarketMaker "./market_maker";
-import AuctionWrapper "./auction_wrapper";
+import Vec "mo:vector";
+
 import Auction "./auction_definitions";
+import AuctionWrapper "./auction_wrapper";
+import HistoryModule "./history";
+import MarketMaker "./market_maker";
+import OracleWrapper "./oracle_wrapper";
+import TPR "./trading_pairs_registry";
 import U "./utils";
 
 actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {

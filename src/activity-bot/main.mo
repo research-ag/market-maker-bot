@@ -16,12 +16,11 @@ import Timer "mo:base/Timer";
 
 import Vec "mo:vector";
 
-import MarketMakerModule "../market-maker-bot-backend/market_maker";
-import Tokens "../market-maker-bot-backend/tokens";
-import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
-import MarketMaker "../market-maker-bot-backend/market_maker";
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
+import MarketMaker "../market-maker-bot-backend/market_maker";
+import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
+import Tokens "../market-maker-bot-backend/tokens";
 import U "../market-maker-bot-backend/utils";
 
 import HistoryModule "./history";
@@ -37,7 +36,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     case (_) Prim.trap("Oracle principal not provided");
   };
 
-  stable var marketPairs : AssocList.AssocList<(quoteSymbol : Text, baseSymbol : Text), MarketMakerModule.MarketPair> = null;
+  stable var marketPairs : AssocList.AssocList<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair> = null;
   stable let history : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
 
   let tokens_info : AssocList.AssocList<Principal, Tokens.TokenInfo> = Tokens.getTokensInfo();
@@ -105,7 +104,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
                     var spread_value = default_spread_value;
                   };
 
-                  let (upd, oldValue) = AssocList.replace<(quoteSymbol : Text, baseSymbol : Text), MarketMakerModule.MarketPair>(
+                  let (upd, oldValue) = AssocList.replace<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair>(
                     marketPairs,
                     (pair.quote_symbol, pair.base_symbol),
                     func((x1, y1), (x2, y2)) = Text.equal(x1, x2) and Text.equal(y1, y2),
@@ -162,7 +161,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     );
   };
 
-  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : ?MarketMakerModule.OrderInfo, rate : ?Float, message : Text) : () {
+  func addHistoryItem(pair : MarketMaker.MarketPair, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, rate, message);
     Vec.add(history, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
