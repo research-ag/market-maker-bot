@@ -52,11 +52,12 @@ module {
         #orders : [{ #ask : OrderId; #bid : OrderId }];
       },
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
+      ?Nat,
     ) -> async ManageOrdersResult;
     queryCredits : shared query () -> async [(Principal, CreditInfo)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
-    queryTokenBids : query (ledger : Principal) -> async [(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })];
+    queryTokenBids : query (ledger : Principal) -> async ([(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })], Nat);
     icrc84_withdraw : ({
       to : { owner : Principal; subaccount : ?Blob };
       amount : Nat;

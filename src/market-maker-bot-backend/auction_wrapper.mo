@@ -85,21 +85,22 @@ module {
         case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
       };
       try {
-        let bidQuoteDelta : Int = if (placeBid) {
-          let oldBids = await ac.queryTokenBids(token);
+        let (bidQuoteDelta, sessionNumber) : (Int, ?Nat) = if (placeBid) {
+          let (oldBids, sessionNumber) = await ac.queryTokenBids(token);
           let oldBidQuoteVolume : Int = if (oldBids.size() > 0) {
             oldBids[0].1.price * Float.fromInt(oldBids[0].1.volume) |> Float.toInt(Float.ceil(_));
           } else {
             0;
           };
           let newBidQuoteVolume : Int = bid.price * Float.fromInt(bid.amount) |> Float.toInt(Float.ceil(_));
-          oldBidQuoteVolume - newBidQuoteVolume;
+          (oldBidQuoteVolume - newBidQuoteVolume, ?sessionNumber);
         } else {
-          0;
+          (0, null);
         };
         let res = await ac.manageOrders(
           ?(#all(?[token])), // cancel all orders for tokens
           placements,
+          sessionNumber,
         );
         switch (res) {
           case (#Ok orderIds) #Ok(orderIds, bidQuoteDelta);
@@ -121,6 +122,7 @@ module {
         let response = await ac.manageOrders(
           ?(#all(?tokens)), // cancel all orders for tokens
           [],
+          null,
         );
 
         switch (response) {

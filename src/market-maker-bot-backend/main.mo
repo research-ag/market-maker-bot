@@ -308,7 +308,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
-    ignore await src.manageOrders(? #all(null), []);
+    ignore await src.manageOrders(? #all(null), [], null);
     let credits = await src.queryCredits();
     for ((_, acc) in credits.vals()) {
       assert acc.locked == 0;
