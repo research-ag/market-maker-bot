@@ -18,11 +18,13 @@ import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
+import PT "mo:promtracker";
 import Vec "mo:vector";
 
 import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import HistoryModule "./history";
+import HTTP "./http";
 import MarketMaker "./market_maker";
 import OracleWrapper "./oracle_wrapper";
 import TPR "./trading_pairs_registry";
@@ -51,6 +53,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   var quote_token : ?Principal = null;
   var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
+
+  let metrics = PT.PromTracker("", 65);
+  metrics.addSystemValues();
+  ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
+  ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
 
   func getState() : (BotState) {
     {
@@ -82,6 +89,13 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       let (qp, sp) = await* tradingPairs.refreshTokens(auction, default_spread_value);
       quote_token := ?qp;
       supported_tokens := sp;
+      for (pair in tradingPairs.getPairs().vals()) {
+        let labels = "base=\"" # pair.base_symbol # "\"";
+
+        ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
+        ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+        ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
+      };
       is_initializing := false;
       is_initialized := true;
       #Ok(getState());
@@ -98,6 +112,14 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     initializing : Bool;
     quote_token : ?Principal;
     supported_tokens : [Principal];
+  };
+
+  public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
+    let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
+    switch (req.method, path, is_initialized) {
+      case ("GET", "/metrics", true) metrics.renderExposition("canister=\"" # PT.shortName(self) # "\"") |> HTTP.renderPlainText(_);
+      case (_) HTTP.render400();
+    };
   };
 
   system func preupgrade() {
