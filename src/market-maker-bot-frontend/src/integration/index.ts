@@ -58,6 +58,22 @@ export const useGetBotState = () => {
   );
 };
 
+export const useGetQuoteInfo = () => {
+  const { bot } = useBot();
+  const { enqueueSnackbar } = useSnackbar();
+  return useQuery(
+    'quoteInfo',
+    async () => {
+      return bot.getQuoteInfo();
+    },
+    {
+      onError: (err: unknown) => {
+        enqueueSnackbar(`Failed to fetch quote info: ${err}`, { variant: 'error' });
+      },
+    },
+  );
+};
+
 export const useGetHistory = () => {
   const { bot } = useBot();
   const { enqueueSnackbar } = useSnackbar();

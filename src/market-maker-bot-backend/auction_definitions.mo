@@ -8,7 +8,14 @@ module {
   public type CreditInfo = { total : Nat; locked : Nat; available : Nat };
   public type ManageOrdersError = {
     #UnknownPrincipal;
-    #cancellation : { index : Nat; error : { #UnknownAsset; #UnknownOrder } };
+    #cancellation : {
+      index : Nat;
+      error : {
+        #UnknownAsset;
+        #UnknownOrder;
+        #SessionNumberMismatch : Principal;
+      };
+    };
     #placement : {
       index : Nat;
       error : {
@@ -18,6 +25,7 @@ module {
         #UnknownAsset;
         #PriceDigitsOverflow : { maxDigits : Nat };
         #VolumeStepViolated : { baseVolumeStep : Nat };
+        #SessionNumberMismatch : Principal;
       };
     };
     #UnknownError;
@@ -54,7 +62,7 @@ module {
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
       ?Nat,
     ) -> async ManageOrdersResult;
-    queryCredits : shared query () -> async [(Principal, CreditInfo)];
+    queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
     queryTokenBids : query (ledger : Principal) -> async ([(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })], Nat);

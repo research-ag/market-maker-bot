@@ -54,7 +54,7 @@ module {
     public func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
       var map : List.List<(Principal, Nat)> = null;
       try {
-        let credits : [(Principal, Auction.CreditInfo)] = await ac.queryCredits();
+        let credits : [(Principal, Auction.CreditInfo, Nat)] = await ac.queryCredits();
 
         Debug.print("Credits " # debug_show (credits));
 

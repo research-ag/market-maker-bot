@@ -90,7 +90,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        let labels = "base=\"" # pair.base_symbol # "\"";
+        let labels = "base=\"" # pair.base.symbol # "\"";
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
@@ -161,7 +161,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
     let tokens = Array.tabulate<Principal>(
       pairs.size(),
-      func(i : Nat) : Principal = pairs[i].base_principal,
+      func(i : Nat) : Principal = pairs[i].base.principal,
     );
 
     let execute_result = await* auction.removeOrders(tokens);
@@ -200,6 +200,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   public query func getBotState() : async (BotState) {
     getState();
   };
+
+  public query func getQuoteInfo() : async MarketMaker.TokenDescription = async tradingPairs.quoteInfo();
 
   public func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
@@ -268,8 +270,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func setSpreadValue(quoteSymbol : Text, baseSymbol : Text, spreadValue : Float) : async () {
-    switch (tradingPairs.getPair(quoteSymbol, baseSymbol)) {
+  public func setSpreadValue(baseSymbol : Text, spreadValue : Float) : async () {
+    switch (tradingPairs.getPair(baseSymbol)) {
       case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
       case (?p) {
         p.spread_value := spreadValue;
@@ -277,8 +279,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func setQuoteBalance(quoteSymbol : Text, baseSymbol : Text, balance : Nat) : async () {
-    await* tradingPairs.setQuoteBalance(auction, quoteSymbol, baseSymbol, balance);
+  public func setQuoteBalance(baseSymbol : Text, balance : Nat) : async () {
+    await* tradingPairs.setQuoteBalance(auction, baseSymbol, balance);
   };
 
   public func executeMarketMaking() : async () {
@@ -286,13 +288,13 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     for (market_pair in tradingPairs.getPairs().vals()) {
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {
-          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(market_pair.base_principal));
+          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
         };
         if (market_pair.quote_credits == 0) {
-          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(market_pair.quote_principal));
+          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
         };
       } else {
-        let execute_result = await* MarketMaker.execute(market_pair, oracle, auction);
+        let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), market_pair, oracle, auction);
 
         switch (execute_result) {
           case (#Ok(bid_order, ask_order, rate)) {
@@ -332,10 +334,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
     ignore await src.manageOrders(? #all(null), [], null);
     let credits = await src.queryCredits();
-    for ((_, acc) in credits.vals()) {
+    for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
-    for ((token, acc) in credits.vals()) {
+    for ((token, acc, _) in credits.vals()) {
       ignore await src.icrc84_withdraw({
         to = { owner = dest_auction; subaccount = ?destSubaccount };
         amount = acc.available;

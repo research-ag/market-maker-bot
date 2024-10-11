@@ -12,13 +12,17 @@ import U "./utils";
 
 module TradingPairsRegistry {
 
-  public type SharedDataV1 = AssocList.AssocList<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair>;
+  public type SharedDataV1 = AssocList.AssocList<Text, MarketMaker.MarketPair>;
 
   public func defaultSharedDataV1() : SharedDataV1 = null;
 
   public class TradingPairsRegistry() {
 
-    var registry : AssocList.AssocList<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair> = null;
+    var quote : ?MarketMaker.TokenDescription = null;
+
+    var registry : AssocList.AssocList<Text, MarketMaker.MarketPair> = null;
+
+    public func quoteInfo() : MarketMaker.TokenDescription = U.requireMsg(quote, "Not initialized");
 
     public func nPairs() : Nat = List.size(registry);
 
@@ -30,38 +34,34 @@ module TradingPairsRegistry {
       );
     };
 
-    public func getPair(quoteSymbol : Text, baseSymbol : Text) : ?MarketMaker.MarketPair {
-      AssocList.find<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair>(
-        registry,
-        (quoteSymbol, baseSymbol),
-        func((x1, y1), (x2, y2)) = Text.equal(x1, x2) and Text.equal(y1, y2),
-      );
+    public func getPair(baseSymbol : Text) : ?MarketMaker.MarketPair {
+      AssocList.find<Text, MarketMaker.MarketPair>(registry, baseSymbol, Text.equal);
     };
 
     func reserveQuoteCredits(c : AssocList.AssocList<Principal, Nat>) : AssocList.AssocList<Principal, Nat> {
       var credits = c;
       for ((_, pair) in List.toIter(registry)) {
         if (pair.quote_credits > 0) {
-          var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, pair.quote_principal, Principal.equal, 0);
+          var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
           if (quoteFreeCredits <= pair.quote_credits) {
             pair.quote_credits := quoteFreeCredits;
             quoteFreeCredits := 0;
           } else {
             quoteFreeCredits -= pair.quote_credits;
           };
-          let (upd, _) = AssocList.replace<Principal, Nat>(credits, pair.quote_principal, Principal.equal, ?quoteFreeCredits);
+          let (upd, _) = AssocList.replace<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, ?quoteFreeCredits);
           credits := upd;
         };
       };
       credits;
     };
 
-    public func setQuoteBalance(auction : AuctionWrapper.Self, quoteSymbol : Text, baseSymbol : Text, balance : Nat) : async* () {
-      let ?pair = getPair(quoteSymbol, baseSymbol) else throw Error.reject("Trading pair not found");
+    public func setQuoteBalance(auction : AuctionWrapper.Self, baseSymbol : Text, balance : Nat) : async* () {
+      let ?pair = getPair(baseSymbol) else throw Error.reject("Trading pair not found");
       if (pair.quote_credits < balance) {
         var credits = await* pullCredits(auction);
         credits := reserveQuoteCredits(credits);
-        let quoteCredits = U.getByKeyOrDefault<Principal, Nat>(credits, pair.quote_principal, Principal.equal, 0);
+        let quoteCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
         if (quoteCredits + pair.quote_credits < balance) {
           throw Error.reject("Insufficient quote token balance");
         };
@@ -76,7 +76,7 @@ module TradingPairsRegistry {
       credits := reserveQuoteCredits(credits);
       // update values in the registry
       for ((_, pair) in List.toIter(registry)) {
-        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base_principal, Principal.equal, 0);
+        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base.principal, Principal.equal, 0);
       };
     };
 
@@ -84,29 +84,33 @@ module TradingPairsRegistry {
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       let tokens_info = Tokens.getTokensInfo();
+      let quote_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, quote_token, Principal.equal, "Error get quote token info");
+      quote := ?{
+        principal = quote_token;
+        symbol = quote_token_info.symbol;
+        decimals = quote_token_info.decimals;
+      };
 
       for (token in supported_tokens.vals()) {
-        if (Principal.equal(token, quote_token) == false) {
+        if (not Principal.equal(token, quote_token)) {
           switch (AssocList.find(tokens_info, token, Principal.equal)) {
             case (?_) {
               let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.equal, "Error get base token info");
-              let quote_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, quote_token, Principal.equal, "Error get quote token info");
               let pair = {
-                base_principal = token;
-                base_symbol = base_token_info.symbol;
-                base_decimals = base_token_info.decimals;
+                base = {
+                  principal = token;
+                  symbol = base_token_info.symbol;
+                  decimals = base_token_info.decimals;
+                };
                 var base_credits = 0;
-                quote_principal = quote_token;
-                quote_symbol = quote_token_info.symbol;
-                quote_decimals = quote_token_info.decimals;
                 var quote_credits = 0;
                 var spread_value = default_spread_value;
               };
 
-              let (upd, oldValue) = AssocList.replace<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair>(
+              let (upd, oldValue) = AssocList.replace<Text, MarketMaker.MarketPair>(
                 registry,
-                (pair.quote_symbol, pair.base_symbol),
-                func((x1, y1), (x2, y2)) = Text.equal(x1, x2) and Text.equal(y1, y2),
+                pair.base.symbol,
+                Text.equal,
                 ?pair,
               );
               switch (oldValue) {

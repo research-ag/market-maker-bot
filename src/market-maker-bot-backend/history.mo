@@ -41,7 +41,7 @@ module HistoryModule {
       "",
       [
         Int.toText(item.timestamp) # ":  ",
-        item.pair.base_symbol # ":" # item.pair.quote_symbol # " ",
+        item.pair.base.symbol # " ",
         switch (item.rate) {
           case (?_rate) "RATE " # Float.toText(_rate) # ", ";
           case (null) "";

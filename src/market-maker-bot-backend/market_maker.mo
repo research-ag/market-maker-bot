@@ -36,26 +36,22 @@ module MarketMaker {
     price : Float;
   };
 
+  public type TokenDescription = {
+    principal : Principal;
+    symbol : Text;
+    decimals : Nat32;
+  };
+
   public type MarketPairShared = {
-    base_principal : Principal;
-    base_symbol : Text;
-    base_decimals : Nat32;
+    base : TokenDescription;
     base_credits : Nat;
-    quote_principal : Principal;
-    quote_symbol : Text;
-    quote_decimals : Nat32;
     quote_credits : Nat;
     spread_value : Float;
   };
 
   public type MarketPair = {
-    base_principal : Principal;
-    base_symbol : Text;
-    base_decimals : Nat32;
+    base : TokenDescription;
     var base_credits : Nat;
-    quote_principal : Principal;
-    quote_symbol : Text;
-    quote_decimals : Nat32;
     var quote_credits : Nat;
     var spread_value : Float;
   };
@@ -104,15 +100,20 @@ module MarketMaker {
     };
   };
 
-  public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {
+  public func execute(
+    quote : TokenDescription,
+    pair : MarketPair,
+    xrc : OracleWrapper.Self,
+    ac : AuctionWrapper.Self,
+  ) : async* {
     #Ok : (OrderInfo, OrderInfo, Float);
     #Err : (U.ExecutionError, ?OrderInfo, ?OrderInfo, ?Float);
   } {
-    let current_rate_result = await* xrc.getExchangeRate(pair.base_symbol, pair.quote_symbol);
+    let current_rate_result = await* xrc.getExchangeRate(pair.base.symbol, quote.symbol);
 
     // calculate multiplicator which help to normalize the price before create
     // the order to the smallest units of the tokens
-    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.quote_decimals) - Int32.fromNat32(pair.base_decimals);
+    let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
     switch (current_rate_result) {
       case (#Ok(current_rate)) {
@@ -128,7 +129,7 @@ module MarketMaker {
           price = ask_price;
         };
 
-        let replace_orders_result = await* ac.replaceOrders(pair.base_principal, bid_order, ask_order);
+        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order);
 
         switch (replace_orders_result) {
           case (#Ok(_, quoteBalanceDelta)) {
@@ -149,9 +150,15 @@ module MarketMaker {
                   case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?ask_order, ?current_rate);
                   case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?bid_order, ?ask_order, ?current_rate);
                   case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?ask_order, ?current_rate);
+                  case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
                 };
               };
-              case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
+              case (#cancellation(err)) {
+                switch (err.error) {
+                  case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
+                  case (_) #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
+                };
+              };
               case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?ask_order, ?current_rate);
               case (#UnknownError) #Err(#UnknownError, ?bid_order, ?ask_order, ?current_rate);
             };
