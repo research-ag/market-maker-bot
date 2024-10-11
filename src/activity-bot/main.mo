@@ -14,10 +14,12 @@ import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
+import PT "mo:promtracker";
 import Vec "mo:vector";
 
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
+import HTTP "../market-maker-bot-backend/http";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import Tokens "../market-maker-bot-backend/tokens";
@@ -54,6 +56,11 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   var quote : ?MarketMaker.TokenDescription = null;
   var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
+
+  let metrics = PT.PromTracker("", 65);
+  metrics.addSystemValues();
+  ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
+  ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
 
   func getState() : (BotState) {
     {
@@ -124,7 +131,13 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
           };
         };
       };
-      is_initialized := true;
+      for ((_, pair) in List.toIter(marketPairs)) {
+            let labels = "base=\"" # pair.base_symbol # "\"";
+
+            ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
+            ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+            ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
+          };is_initialized := true;
       is_initializing := false;
       return #Ok(getState());
     } catch (_) {
@@ -140,6 +153,14 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     initializing : Bool;
     quote_token : ?Principal;
     supported_tokens : [Principal];
+  };
+
+  public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
+    let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
+    switch (req.method, path, is_initialized) {
+      case ("GET", "/metrics", true) metrics.renderExposition("canister=\"" # PT.shortName(self) # "\"") |> HTTP.renderPlainText(_);
+      case (_) HTTP.render400();
+    };
   };
 
   system func preupgrade() {
