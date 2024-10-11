@@ -132,12 +132,13 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         };
       };
       for ((_, pair) in List.toIter(marketPairs)) {
-            let labels = "base=\"" # pair.base_symbol # "\"";
+        let labels = "base=\"" # pair.base.symbol # "\"";
 
-            ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
-            ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-            ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
-          };is_initialized := true;
+        ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
+        ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+        ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
+      };
+      is_initialized := true;
       is_initializing := false;
       return #Ok(getState());
     } catch (_) {
