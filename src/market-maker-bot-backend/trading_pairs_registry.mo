@@ -1,6 +1,7 @@
 import Array "mo:base/Array";
 import AssocList "mo:base/AssocList";
 import Error "mo:base/Error";
+import Int "mo:base/Int";
 import List "mo:base/List";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
@@ -12,15 +13,22 @@ import U "./utils";
 
 module TradingPairsRegistry {
 
-  public type SharedDataV1 = AssocList.AssocList<Text, MarketMaker.MarketPair>;
+  public type SharedDataV1 = {
+    registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
+    quoteReserve : Nat;
+  };
 
-  public func defaultSharedDataV1() : SharedDataV1 = null;
+  public func defaultSharedDataV1() : SharedDataV1 = {
+    registry = null;
+    quoteReserve = 0;
+  };
 
   public class TradingPairsRegistry() {
 
     var quote : ?MarketMaker.TokenDescription = null;
 
     var registry : AssocList.AssocList<Text, MarketMaker.MarketPair> = null;
+    var quoteReserve : Nat = 0;
 
     public func quoteInfo() : MarketMaker.TokenDescription = U.requireMsg(quote, "Not initialized");
 
@@ -38,46 +46,42 @@ module TradingPairsRegistry {
       AssocList.find<Text, MarketMaker.MarketPair>(registry, baseSymbol, Text.equal);
     };
 
-    func reserveQuoteCredits(c : AssocList.AssocList<Principal, Nat>) : AssocList.AssocList<Principal, Nat> {
-      var credits = c;
+    public func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async* Nat {
+      let ?pair = getPair(baseSymbol) else throw Error.reject("Trading pair not found");
+      var balanceInc : Int = switch (balance) {
+        case (#set x) x - pair.quote_credits;
+        case (#inc x) x;
+        case (#dec x) Int.max(-pair.quote_credits, -x);
+      };
+      if (balanceInc > 0 and quoteReserve < balanceInc) {
+        throw Error.reject("Insufficient quote token balance");
+      };
+      pair.quote_credits := Int.abs(pair.quote_credits + balanceInc);
+      quoteReserve := Int.abs(quoteReserve - balanceInc);
+      pair.quote_credits;
+    };
+
+    public func refreshCredits(auction : AuctionWrapper.Self) : async* () {
+      // pull pure credits from the auction
+      let supported_tokens = await* auction.getSupportedTokens();
+      for (token in supported_tokens.vals()) {
+        ignore await* auction.notify(token);
+      };
+      let credits = await* auction.getCredits();
+      // calculate quote credits reserve, update values in the registry
+      var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
       for ((_, pair) in List.toIter(registry)) {
+        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base.principal, Principal.equal, 0);
         if (pair.quote_credits > 0) {
-          var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
           if (quoteFreeCredits <= pair.quote_credits) {
             pair.quote_credits := quoteFreeCredits;
             quoteFreeCredits := 0;
           } else {
             quoteFreeCredits -= pair.quote_credits;
           };
-          let (upd, _) = AssocList.replace<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, ?quoteFreeCredits);
-          credits := upd;
         };
       };
-      credits;
-    };
-
-    public func setQuoteBalance(auction : AuctionWrapper.Self, baseSymbol : Text, balance : Nat) : async* () {
-      let ?pair = getPair(baseSymbol) else throw Error.reject("Trading pair not found");
-      if (pair.quote_credits < balance) {
-        var credits = await* pullCredits(auction);
-        credits := reserveQuoteCredits(credits);
-        let quoteCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
-        if (quoteCredits + pair.quote_credits < balance) {
-          throw Error.reject("Insufficient quote token balance");
-        };
-      };
-      pair.quote_credits := balance;
-    };
-
-    public func refreshCredits(auction : AuctionWrapper.Self) : async* () {
-      // pull pure credits from the auction
-      var credits = await* pullCredits(auction);
-      // decrement already reserved funds from quote token(s) credits
-      credits := reserveQuoteCredits(credits);
-      // update values in the registry
-      for ((_, pair) in List.toIter(registry)) {
-        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base.principal, Principal.equal, 0);
-      };
+      quoteReserve := quoteFreeCredits;
     };
 
     public func refreshTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
@@ -125,20 +129,13 @@ module TradingPairsRegistry {
       (quote_token, supported_tokens);
     };
 
-    func pullCredits(auction : AuctionWrapper.Self) : async* AssocList.AssocList<Principal, Nat> {
-      let supported_tokens = await* auction.getSupportedTokens();
-      for (token in supported_tokens.vals()) {
-        ignore await* auction.notify(token);
-      };
-      await* auction.getCredits();
-    };
-
     public func share() : SharedDataV1 {
-      registry;
+      { registry; quoteReserve };
     };
 
     public func unshare(data : SharedDataV1) {
-      registry := data;
+      registry := data.registry;
+      quoteReserve := data.quoteReserve;
     };
 
   };

@@ -279,8 +279,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func setQuoteBalance(baseSymbol : Text, balance : Nat) : async () {
-    await* tradingPairs.setQuoteBalance(auction, baseSymbol, balance);
+  public func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
+    await* tradingPairs.setQuoteBalance(baseSymbol, balance);
   };
 
   public func executeMarketMaking() : async () {
