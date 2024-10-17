@@ -46,13 +46,18 @@ module MarketMaker {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
+    locked_quote_credits : Nat;
     spread_value : Float;
   };
 
   public type MarketPair = {
     base : TokenDescription;
+    // total base token credits: available + locked by currently placed ask
     var base_credits : Nat;
+    // total quote token credits assigned to this pair: available + locked by currently placed bid
     var quote_credits : Nat;
+    // currently locked quote token credits, assigned to this pair
+    var locked_quote_credits : Nat;
     var spread_value : Float;
   };
 
@@ -69,6 +74,7 @@ module MarketMaker {
       pair with
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
+      locked_quote_credits = pair.locked_quote_credits;
       spread_value = pair.spread_value;
     };
   };
@@ -105,6 +111,7 @@ module MarketMaker {
     pair : MarketPair,
     xrc : OracleWrapper.Self,
     ac : AuctionWrapper.Self,
+    sessionNumber : ?Nat,
   ) : async* {
     #Ok : (OrderInfo, OrderInfo, Float);
     #Err : (U.ExecutionError, ?OrderInfo, ?OrderInfo, ?Float);
@@ -129,15 +136,11 @@ module MarketMaker {
           price = ask_price;
         };
 
-        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order);
+        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order, sessionNumber);
 
         switch (replace_orders_result) {
-          case (#Ok(_, quoteBalanceDelta)) {
-            if (quoteBalanceDelta >= 0) {
-              pair.quote_credits += Int.abs(quoteBalanceDelta);
-            } else {
-              pair.quote_credits -= Int.abs(quoteBalanceDelta);
-            };
+          case (#Ok _) {
+            pair.locked_quote_credits := (bid_order.price * Float.fromInt(bid_order.amount) |> Int.abs(Float.toInt(Float.ceil(_))));
             #Ok(bid_order, ask_order, current_rate);
           };
           case (#Err(err)) {

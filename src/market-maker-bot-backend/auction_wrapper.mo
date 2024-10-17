@@ -10,6 +10,7 @@ import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
 import List "mo:base/List";
+import Option "mo:base/Option";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
 
@@ -47,12 +48,16 @@ module {
       };
     };
 
-    public func getCredit(token : Principal) : async* Int {
-      await ac.icrc84_credit(token);
+    // returns total credit (available + locked)
+    public func getCredit(token : Principal) : async* Nat {
+      let (credit, _) = await ac.queryCredit(token);
+      credit.total;
     };
 
-    public func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
+    // returns total credits (available + locked)
+    public func getCredits() : async* (AssocList.AssocList<Principal, Nat>, Nat) {
       var map : List.List<(Principal, Nat)> = null;
+      var sessionNumber : ?Nat = null;
       try {
         let credits : [(Principal, Auction.CreditInfo, Nat)] = await ac.queryCredits();
 
@@ -60,16 +65,20 @@ module {
 
         for (credit in credits.vals()) {
           map := List.push<(Principal, Nat)>((credit.0, credit.1.total), map);
+          switch (sessionNumber) {
+            case (?sn) assert credit.2 == sn;
+            case (null) sessionNumber := ?credit.2;
+          };
         };
       } catch (e) {
         Debug.print(Error.message(e));
       };
 
-      return map;
+      (map, Option.get(sessionNumber, 0));
     };
 
-    public func replaceOrders(token : Principal, bid : OrderInfo, ask : OrderInfo) : async* {
-      #Ok : (orderIds : [Nat], quoteBalanceDelta : Int);
+    public func replaceOrders(token : Principal, bid : OrderInfo, ask : OrderInfo, sessionNumber : ?Nat) : async* {
+      #Ok : [Nat];
       #Err : Auction.ManageOrdersError;
     } {
       let placeAsk = ask.amount > 0;
@@ -85,27 +94,11 @@ module {
         case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
       };
       try {
-        let (bidQuoteDelta, sessionNumber) : (Int, ?Nat) = if (placeBid) {
-          let (oldBids, sessionNumber) = await ac.queryTokenBids(token);
-          let oldBidQuoteVolume : Int = if (oldBids.size() > 0) {
-            oldBids[0].1.price * Float.fromInt(oldBids[0].1.volume) |> Float.toInt(Float.ceil(_));
-          } else {
-            0;
-          };
-          let newBidQuoteVolume : Int = bid.price * Float.fromInt(bid.amount) |> Float.toInt(Float.ceil(_));
-          (oldBidQuoteVolume - newBidQuoteVolume, ?sessionNumber);
-        } else {
-          (0, null);
-        };
-        let res = await ac.manageOrders(
+        await ac.manageOrders(
           ?(#all(?[token])), // cancel all orders for tokens
           placements,
           sessionNumber,
         );
-        switch (res) {
-          case (#Ok orderIds) #Ok(orderIds, bidQuoteDelta);
-          case (#Err x) #Err(x);
-        };
       } catch (_) {
         #Err(#UnknownError);
       };

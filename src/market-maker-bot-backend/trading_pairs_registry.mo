@@ -1,6 +1,7 @@
 import Array "mo:base/Array";
 import AssocList "mo:base/AssocList";
 import Error "mo:base/Error";
+import Float "mo:base/Float";
 import Int "mo:base/Int";
 import List "mo:base/List";
 import Principal "mo:base/Principal";
@@ -61,13 +62,29 @@ module TradingPairsRegistry {
       pair.quote_credits;
     };
 
-    public func refreshCredits(auction : AuctionWrapper.Self) : async* () {
+    public func refreshCredits(auction : AuctionWrapper.Self) : async* Nat {
       // pull pure credits from the auction
       let supported_tokens = await* auction.getSupportedTokens();
       for (token in supported_tokens.vals()) {
         ignore await* auction.notify(token);
       };
-      let credits = await* auction.getCredits();
+      let (credits, sessionNumber) = await* auction.getCredits();
+      let activeBids = await auction.getAuction().queryBids();
+      // update buckets if any of already placed bids were fulfilled
+      for ((_, pair) in List.toIter(registry)) {
+        let activeBid = Array.find<(Any, { icrc1Ledger : Principal; price : Float; volume : Nat }, Nat)>(activeBids, func((_, { icrc1Ledger }, _)) = Principal.equal(icrc1Ledger, pair.base.principal));
+        let lockedQuote = switch (activeBid) {
+          case (null) 0;
+          case (?(_, bid, sn)) {
+            assert sn == sessionNumber;
+            (bid.price * Float.fromInt(bid.volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+          };
+        };
+        if (lockedQuote != pair.locked_quote_credits) {
+          pair.quote_credits := Int.abs(pair.quote_credits + lockedQuote - pair.locked_quote_credits);
+          pair.locked_quote_credits := lockedQuote;
+        };
+      };
       // calculate quote credits reserve, update values in the registry
       var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
       for ((_, pair) in List.toIter(registry)) {
@@ -82,6 +99,7 @@ module TradingPairsRegistry {
         };
       };
       quoteReserve := quoteFreeCredits;
+      sessionNumber;
     };
 
     public func refreshTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
@@ -108,6 +126,7 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
+                var locked_quote_credits = 0;
                 var spread_value = default_spread_value;
               };
 

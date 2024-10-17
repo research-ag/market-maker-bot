@@ -94,6 +94,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+        ignore metrics.addPullValue("locked_quote_credits", labels, func() = pair.locked_quote_credits);
         ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
       };
       is_initializing := false;
@@ -284,7 +285,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public func executeMarketMaking() : async () {
-    await* tradingPairs.refreshCredits(auction);
+    let sessionNumber = ?(await* tradingPairs.refreshCredits(auction));
+
     for (market_pair in tradingPairs.getPairs().vals()) {
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {
@@ -294,7 +296,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
           addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
         };
       } else {
-        let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), market_pair, oracle, auction);
+        let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), market_pair, oracle, auction, sessionNumber);
 
         switch (execute_result) {
           case (#Ok(bid_order, ask_order, rate)) {

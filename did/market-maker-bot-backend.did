@@ -1,44 +1,39 @@
-type OrderInfo = 
- record {
-   amount: nat;
-   price: float64;
- };
-type MarketPair = 
- record {
-   base_credits: nat;
-   base_decimals: nat32;
-   base_principal: principal;
-   base_symbol: text;
-   quote_credits: nat;
-   quote_decimals: nat32;
-   quote_principal: principal;
-   quote_symbol: text;
-   spread_value: float64;
- };
-type MarketMakerBot = 
- service {
-   addCredits: () -> ();
-   executeMarketMaking: () -> ();
-   getBotState: () -> (BotState) query;
-   getHistory: () -> (vec HistoryItemType) query;
-   getPairsList: () -> (vec MarketPair) query;
-   init: () -> ();
-   startBot: () -> (BotState);
-   stopBot: () -> (BotState);
- };
-type HistoryItemType = 
- record {
-   askOrder: OrderInfo;
-   bidOrder: OrderInfo;
-   message: text;
-   pair: MarketPair;
- };
-type BotState = record {running: bool;};
+type OrderInfo = record {
+  amount : nat;
+  price : float64;
+};
+type MarketPair = record {
+  base : record {
+    principal : principal;
+    decimals : nat32;
+    symbol : text;
+  };
+  base_credits : nat;
+  quote_credits : nat;
+  spread_value : float64;
+};
+type MarketMakerBot = service {
+  addCredits : () -> ();
+  executeMarketMaking : () -> ();
+  getBotState : () -> (BotState) query;
+  getHistory : () -> (vec HistoryItemType) query;
+  getPairsList : () -> (vec MarketPair) query;
+  init : () -> ();
+  startBot : () -> (BotState);
+  stopBot : () -> (BotState);
+};
+type HistoryItemType = record {
+  askOrder : OrderInfo;
+  bidOrder : OrderInfo;
+  message : text;
+  pair : MarketPair;
+};
+type BotState = record { running : bool };
 /// A module which contain implementation of market maker orchestrationg
 /// Contain all public methods for bot which helps to manage bot state
 /// Manage list of trading pairs, have only one fixed quote asset for all pairs
-/// 
+///
 /// Copyright: 2023-2024 MR Research AG
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
-service : (principal, principal) -> MarketMakerBot
+service : (principal, principal) -> MarketMakerBot;

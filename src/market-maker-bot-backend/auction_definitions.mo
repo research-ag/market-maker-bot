@@ -52,7 +52,6 @@ module {
   };
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
-    icrc84_credit : shared (Principal) -> async Int;
     manageOrders : shared (
       ?{
         #all : ?[Principal];
@@ -61,9 +60,11 @@ module {
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
       ?Nat,
     ) -> async ManageOrdersResult;
+    queryCredit : shared query (Principal) -> async (CreditInfo, Nat);
     queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
+    queryBids : query () -> async ([(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat }, Nat)]);
     queryTokenBids : query (ledger : Principal) -> async ([(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })], Nat);
     icrc84_withdraw : ({
       to : { owner : Principal; subaccount : ?Blob };
