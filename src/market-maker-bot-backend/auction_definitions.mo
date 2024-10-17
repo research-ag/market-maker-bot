@@ -7,13 +7,13 @@
 module {
   public type CreditInfo = { total : Nat; locked : Nat; available : Nat };
   public type ManageOrdersError = {
+    #SessionNumberMismatch : Principal;
     #UnknownPrincipal;
     #cancellation : {
       index : Nat;
       error : {
         #UnknownAsset;
         #UnknownOrder;
-        #SessionNumberMismatch : Principal;
       };
     };
     #placement : {
@@ -25,7 +25,6 @@ module {
         #UnknownAsset;
         #PriceDigitsOverflow : { maxDigits : Nat };
         #VolumeStepViolated : { baseVolumeStep : Nat };
-        #SessionNumberMismatch : Principal;
       };
     };
     #UnknownError;

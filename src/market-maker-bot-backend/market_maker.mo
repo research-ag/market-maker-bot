@@ -150,15 +150,12 @@ module MarketMaker {
                   case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?ask_order, ?current_rate);
                   case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?bid_order, ?ask_order, ?current_rate);
                   case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?ask_order, ?current_rate);
-                  case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
                 };
               };
               case (#cancellation(err)) {
-                switch (err.error) {
-                  case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
-                  case (_) #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
-                };
+                #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
               };
+              case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
               case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?ask_order, ?current_rate);
               case (#UnknownError) #Err(#UnknownError, ?bid_order, ?ask_order, ?current_rate);
             };
