@@ -284,6 +284,18 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     await* tradingPairs.setQuoteBalance(baseSymbol, balance);
   };
 
+  public func notify(token : ?Principal) : async () {
+    switch (token) {
+      case (?t) ignore await* auction.notify(t);
+      case (null) {
+        let supported_tokens = await* auction.getSupportedTokens();
+        for (token in supported_tokens.vals()) {
+          ignore await* auction.notify(token);
+        };
+      };
+    };
+  };
+
   public func executeMarketMaking() : async () {
     let sessionNumber = ?(await* tradingPairs.refreshCredits(auction));
 

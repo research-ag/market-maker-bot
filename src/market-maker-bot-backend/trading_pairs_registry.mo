@@ -7,6 +7,7 @@ import List "mo:base/List";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 
+import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import MarketMaker "./market_maker";
 import Tokens "./tokens";
@@ -64,15 +65,11 @@ module TradingPairsRegistry {
 
     public func refreshCredits(auction : AuctionWrapper.Self) : async* Nat {
       // pull pure credits from the auction
-      let supported_tokens = await* auction.getSupportedTokens();
-      for (token in supported_tokens.vals()) {
-        ignore await* auction.notify(token);
-      };
       let (credits, sessionNumber) = await* auction.getCredits();
       let activeBids = await auction.getAuction().queryBids();
       // update buckets if any of already placed bids were fulfilled
       for ((_, pair) in List.toIter(registry)) {
-        let activeBid = Array.find<(Any, { icrc1Ledger : Principal; price : Float; volume : Nat }, Nat)>(activeBids, func((_, { icrc1Ledger }, _)) = Principal.equal(icrc1Ledger, pair.base.principal));
+        let activeBid = Array.find<(Any, Auction.Order, Nat)>(activeBids, func((_, { icrc1Ledger }, _)) = Principal.equal(icrc1Ledger, pair.base.principal));
         let lockedQuote = switch (activeBid) {
           case (null) 0;
           case (?(_, bid, sn)) {

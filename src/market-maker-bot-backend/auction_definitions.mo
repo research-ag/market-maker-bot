@@ -50,6 +50,11 @@ module {
       #AmountBelowMinimum : {};
     };
   };
+  public type Order = {
+    icrc1Ledger : Principal;
+    price : Float;
+    volume : Nat;
+  };
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
     manageOrders : shared (
@@ -64,8 +69,7 @@ module {
     queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
-    queryBids : query () -> async ([(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat }, Nat)]);
-    queryTokenBids : query (ledger : Principal) -> async ([(OrderId, { icrc1Ledger : Principal; price : Float; volume : Nat })], Nat);
+    queryBids : query () -> async ([(OrderId, Order, Nat)]);
     icrc84_withdraw : ({
       to : { owner : Principal; subaccount : ?Blob };
       amount : Nat;
