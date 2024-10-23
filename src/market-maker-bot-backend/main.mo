@@ -6,24 +6,28 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 import Array "mo:base/Array";
-import AssocList "mo:base/AssocList";
 import Blob "mo:base/Blob";
 import Bool "mo:base/Bool";
 import Debug "mo:base/Debug";
+import Error "mo:base/Error";
 import Float "mo:base/Float";
+import Int "mo:base/Int";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
-import MarketMakerModule "./market_maker";
-import HistoryModule "./history";
-import Tokens "./tokens";
-import OracleWrapper "./oracle_wrapper";
-import MarketMaker "./market_maker";
-import AuctionWrapper "./auction_wrapper";
+import PT "mo:promtracker";
+import Vec "mo:vector";
+
 import Auction "./auction_definitions";
+import AuctionWrapper "./auction_wrapper";
+import HistoryModule "./history";
+import HTTP "./http";
+import MarketMaker "./market_maker";
+import OracleWrapper "./oracle_wrapper";
+import TPR "./trading_pairs_registry";
 import U "./utils";
 
 actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
@@ -31,13 +35,14 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   stable let auction_principal : Principal = auction_be_;
   stable let oracle_principal : Principal = oracle_be_;
 
-  let tokens_info : AssocList.AssocList<Principal, Tokens.TokenInfo> = Tokens.getTokensInfo();
+  stable var tradingPairsDataV1 : TPR.SharedDataV1 = TPR.defaultSharedDataV1();
+  stable let history : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
+
+  let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
   let default_spread_value : Float = 0.05;
 
-  var market_pairs : [MarketMakerModule.MarketPair] = [];
-  var history : [HistoryModule.HistoryItem] = [];
   var bot_timer : Timer.TimerId = 0;
 
   /// Bot state flags and variables
@@ -48,6 +53,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   var quote_token : ?Principal = null;
   var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
+
+  let metrics = PT.PromTracker("", 65);
+  metrics.addSystemValues();
+  ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
+  ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
 
   func getState() : (BotState) {
     {
@@ -75,30 +85,21 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     try {
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      quote_token := ?(await* auction.getQuoteToken());
-      supported_tokens := await* auction.getSupportedTokens();
+      tradingPairs.unshare(tradingPairsDataV1);
+      let (qp, sp) = await* tradingPairs.refreshTokens(auction, default_spread_value);
+      quote_token := ?qp;
+      supported_tokens := sp;
+      for (pair in tradingPairs.getPairs().vals()) {
+        let labels = "base=\"" # pair.base.symbol # "\"";
 
-      switch (quote_token) {
-        case (?quote_token) {
-          for (token in supported_tokens.vals()) {
-            if (Principal.equal(token, quote_token) == false) {
-              switch (AssocList.find(tokens_info, token, Principal.equal)) {
-                case (?_) {
-                  market_pairs := Array.append(market_pairs, [getMarketPair(token, quote_token, null)]);
-                };
-                case (_) {};
-              };
-            };
-          };
-          is_initialized := true;
-          is_initializing := false;
-          return #Ok(getState());
-        };
-        case (null) {
-          is_initializing := false;
-          return #Err(#UnknownQuoteTokenError);
-        };
+        ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
+        ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+        ignore metrics.addPullValue("locked_quote_credits", labels, func() = pair.locked_quote_credits);
+        ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
       };
+      is_initializing := false;
+      is_initialized := true;
+      #Ok(getState());
     } catch (_) {
       is_initializing := false;
       return #Err(#UnknownError);
@@ -114,8 +115,19 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     supported_tokens : [Principal];
   };
 
+  public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
+    let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
+    switch (req.method, path, is_initialized) {
+      case ("GET", "/metrics", true) metrics.renderExposition("canister=\"" # PT.shortName(self) # "\"") |> HTTP.renderPlainText(_);
+      case (_) HTTP.render400();
+    };
+  };
+
   system func preupgrade() {
     Debug.print("Preupgrade");
+    if (is_initialized) {
+      tradingPairsDataV1 := tradingPairs.share();
+    };
   };
 
   system func postupgrade() {
@@ -132,112 +144,65 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     );
   };
 
-  func addHistoryItem(pair : MarketMakerModule.MarketPair, bidOrder : ?MarketMakerModule.OrderInfo, askOrder : ?MarketMakerModule.OrderInfo, rate : ?Float, message : Text) : () {
-    let historyItem = HistoryModule.HistoryItem(pair, bidOrder, askOrder, rate, message);
-    history := Array.append(
-      history,
-      [historyItem],
-    );
-    Debug.print(historyItem.getText());
-  };
-
-  func getMarketPair(base : Principal, quote : Principal, token_credits : AssocList.AssocList<Principal, Nat>) : (MarketMakerModule.MarketPair) {
-    let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, base, Principal.equal, "Error get base token info");
-    let quote_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, quote, Principal.equal, "Error get quote token info");
-
-    {
-      base_principal = base;
-      base_symbol = base_token_info.symbol;
-      base_decimals = base_token_info.decimals;
-      base_credits = U.getByKeyOrDefault<Principal, Nat>(token_credits, base, Principal.equal, 0);
-      quote_principal = quote;
-      quote_symbol = quote_token_info.symbol;
-      quote_decimals = quote_token_info.decimals;
-      quote_credits = U.getByKeyOrDefault<Principal, Nat>(token_credits, quote, Principal.equal, 0);
-      spread_value = default_spread_value;
-    };
+  func addHistoryItem(pair : MarketMaker.MarketPair, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
+    let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
+    Vec.add(history, historyItem);
+    Debug.print(HistoryModule.getText(historyItem));
   };
 
   func cancelAllOrders() : async* {
     #Ok : ();
     #Err : ();
   } {
-    let size = market_pairs.size();
+    let pairs = tradingPairs.getPairs();
 
-    if (size == 0) {
+    if (pairs.size() == 0) {
       return #Ok;
     };
 
     let tokens = Array.tabulate<Principal>(
-      size,
-      func(i : Nat) : Principal = market_pairs[i].base_principal,
+      pairs.size(),
+      func(i : Nat) : Principal = pairs[i].base.principal,
     );
 
     let execute_result = await* auction.removeOrders(tokens);
 
     switch (execute_result) {
       case (#Ok) {
-        addHistoryItem(market_pairs[0], null, null, null, "ORDERS REMOVED");
+        addHistoryItem(pairs[0], null, null, null, "ORDERS REMOVED");
         return #Ok;
       };
       case (#Err(err)) {
-        addHistoryItem(market_pairs[0], null, null, null, "ORDERS REMOVING ERROR: " # U.getErrorMessage(err));
+        addHistoryItem(pairs[0], null, null, null, "ORDERS REMOVING ERROR: " # U.getErrorMessage(err));
         return #Err;
       };
     };
   };
 
-  func notifyCreditUpdates() : async* () {
-    let supported_tokens = await* auction.getSupportedTokens();
-    for (token in supported_tokens.vals()) {
-      ignore await* auction.notify(token);
-    };
-  };
-
-  func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
-    /// here will be logic for calculating available credits for each pair
-    /// based on the current state of the auction, quote credit limit and already placed orders
-    /// temporary just simple return quote token credits divided by pairs count
-    await* notifyCreditUpdates();
-    let token_credits : AssocList.AssocList<Principal, Nat> = await* auction.getCredits();
-    switch (quote_token) {
-      case (?quote_token) {
-        let size = market_pairs.size();
-        if (size == 0) {
-          return token_credits;
-        };
-        let quote_token_credits : Nat = U.getByKeyOrDefault<Principal, Nat>(token_credits, quote_token, Principal.equal, 0) / size;
-        return AssocList.replace<Principal, Nat>(token_credits, quote_token, Principal.equal, ?quote_token_credits).0;
-      };
-      case (null) {
-        return token_credits;
-      };
-    };
-
-  };
-
   /// to make it faster let's not ask about credits here, just return paris list
   /// we will manage credits and funds limit in separate place, so here is we can just return existing data
-  public query func getPairsList() : async ([MarketMaker.MarketPair]) {
-    let size = market_pairs.size();
-    // let token_credits = await* getCredits();
-    Array.tabulate<MarketMaker.MarketPair>(
-      size,
-      func(i : Nat) : MarketMaker.MarketPair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, null),
+  public query func getPairsList() : async ([MarketMaker.MarketPairShared]) {
+    let pairs = tradingPairs.getPairs();
+    Array.tabulate<MarketMaker.MarketPairShared>(
+      pairs.size(),
+      func(i : Nat) : MarketMaker.MarketPairShared = MarketMaker.sharePair(pairs[i]),
     );
   };
 
-  public query func getHistory() : async ([HistoryModule.HistoryItemType]) {
-    let size = history.size();
+  public query func getHistory(limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
+    let size : Int = Vec.size(history) - skip;
+    if (size < 1) return [];
     Array.tabulate<HistoryModule.HistoryItemType>(
-      size,
-      func(i : Nat) : HistoryModule.HistoryItemType = history[i].getItem(),
+      Nat.min(Int.abs(size), limit),
+      func(i : Nat) : HistoryModule.HistoryItemType = Vec.get(history, i + skip),
     );
   };
 
   public query func getBotState() : async (BotState) {
     getState();
   };
+
+  public query func getQuoteInfo() : async MarketMaker.TokenDescription = async tradingPairs.quoteInfo();
 
   public func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
@@ -306,23 +271,44 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
+  public func setSpreadValue(baseSymbol : Text, spreadValue : Float) : async () {
+    switch (tradingPairs.getPair(baseSymbol)) {
+      case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
+      case (?p) {
+        p.spread_value := spreadValue;
+      };
+    };
+  };
+
+  public func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
+    await* tradingPairs.setQuoteBalance(baseSymbol, balance);
+  };
+
+  public func notify(token : ?Principal) : async () {
+    switch (token) {
+      case (?t) ignore await* auction.notify(t);
+      case (null) {
+        let supported_tokens = await* auction.getSupportedTokens();
+        for (token in supported_tokens.vals()) {
+          ignore await* auction.notify(token);
+        };
+      };
+    };
+  };
+
   public func executeMarketMaking() : async () {
-    var i : Nat = 0;
-    let size = market_pairs.size();
-    let token_credits = await* getCredits();
+    let sessionNumber = ?(await* tradingPairs.refreshCredits(auction));
 
-    while (i < size) {
-      let market_pair = getMarketPair(market_pairs[i].base_principal, market_pairs[i].quote_principal, token_credits);
-
+    for (market_pair in tradingPairs.getPairs().vals()) {
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {
-          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(market_pair.base_principal));
+          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
         };
         if (market_pair.quote_credits == 0) {
-          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(market_pair.quote_principal));
+          addHistoryItem(market_pair, null, null, null, "Error processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
         };
       } else {
-        let execute_result = await* MarketMaker.execute(market_pair, oracle, auction);
+        let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), market_pair, oracle, auction, sessionNumber);
 
         switch (execute_result) {
           case (#Ok(bid_order, ask_order, rate)) {
@@ -334,7 +320,6 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         };
       };
 
-      i := i + 1;
     };
   };
 
@@ -361,12 +346,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
-    ignore await src.manageOrders(? #all(null), []);
+    ignore await src.manageOrders(? #all(null), [], null);
     let credits = await src.queryCredits();
-    for ((_, acc) in credits.vals()) {
+    for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
-    for ((token, acc) in credits.vals()) {
+    for ((token, acc, _) in credits.vals()) {
       ignore await src.icrc84_withdraw({
         to = { owner = dest_auction; subaccount = ?destSubaccount };
         amount = acc.available;

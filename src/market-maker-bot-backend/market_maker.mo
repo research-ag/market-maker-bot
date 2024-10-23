@@ -36,16 +36,29 @@ module MarketMaker {
     price : Float;
   };
 
-  public type MarketPair = {
-    base_principal : Principal;
-    base_symbol : Text;
-    base_decimals : Nat32;
+  public type TokenDescription = {
+    principal : Principal;
+    symbol : Text;
+    decimals : Nat32;
+  };
+
+  public type MarketPairShared = {
+    base : TokenDescription;
     base_credits : Nat;
-    quote_principal : Principal;
-    quote_symbol : Text;
-    quote_decimals : Nat32;
     quote_credits : Nat;
+    locked_quote_credits : Nat;
     spread_value : Float;
+  };
+
+  public type MarketPair = {
+    base : TokenDescription;
+    // total base token credits: available + locked by currently placed ask
+    var base_credits : Nat;
+    // total quote token credits assigned to this pair: available + locked by currently placed bid
+    var quote_credits : Nat;
+    // currently locked quote token credits, assigned to this pair
+    var locked_quote_credits : Nat;
+    var spread_value : Float;
   };
 
   let digits : Float = 5;
@@ -54,6 +67,16 @@ module MarketMaker {
     let e = - Float.log(x) / 2.302_585_092_994_045;
     let e1 = Float.floor(e) + digits;
     Float.floor(x * 10 ** e1) * 10 ** -e1;
+  };
+
+  public func sharePair(pair : MarketPair) : MarketPairShared {
+    {
+      pair with
+      base_credits = pair.base_credits;
+      quote_credits = pair.quote_credits;
+      locked_quote_credits = pair.locked_quote_credits;
+      spread_value = pair.spread_value;
+    };
   };
 
   public func getPrices(spread : Float, currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
@@ -83,15 +106,21 @@ module MarketMaker {
     };
   };
 
-  public func execute(pair : MarketPair, xrc : OracleWrapper.Self, ac : AuctionWrapper.Self) : async* {
+  public func execute(
+    quote : TokenDescription,
+    pair : MarketPair,
+    xrc : OracleWrapper.Self,
+    ac : AuctionWrapper.Self,
+    sessionNumber : ?Nat,
+  ) : async* {
     #Ok : (OrderInfo, OrderInfo, Float);
     #Err : (U.ExecutionError, ?OrderInfo, ?OrderInfo, ?Float);
   } {
-    let current_rate_result = await* xrc.getExchangeRate(pair.base_symbol, pair.quote_symbol);
+    let current_rate_result = await* xrc.getExchangeRate(pair.base.symbol, quote.symbol);
 
     // calculate multiplicator which help to normalize the price before create
     // the order to the smallest units of the tokens
-    let price_decimals_multiplicator : Int32 = Int32.fromNat32(pair.quote_decimals) - Int32.fromNat32(pair.base_decimals);
+    let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
     switch (current_rate_result) {
       case (#Ok(current_rate)) {
@@ -107,10 +136,13 @@ module MarketMaker {
           price = ask_price;
         };
 
-        let replace_orders_result = await* ac.replaceOrders(pair.base_principal, bid_order, ask_order);
+        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order, sessionNumber);
 
         switch (replace_orders_result) {
-          case (#Ok(_)) #Ok(bid_order, ask_order, current_rate);
+          case (#Ok _) {
+            pair.locked_quote_credits := (bid_order.price * Float.fromInt(bid_order.amount) |> Int.abs(Float.toInt(Float.ceil(_))));
+            #Ok(bid_order, ask_order, current_rate);
+          };
           case (#Err(err)) {
             switch (err) {
               case (#placement(err)) {
@@ -123,7 +155,10 @@ module MarketMaker {
                   case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?ask_order, ?current_rate);
                 };
               };
-              case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
+              case (#cancellation(err)) {
+                #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
+              };
+              case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
               case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?ask_order, ?current_rate);
               case (#UnknownError) #Err(#UnknownError, ?bid_order, ?ask_order, ?current_rate);
             };

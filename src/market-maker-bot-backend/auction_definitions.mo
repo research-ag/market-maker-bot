@@ -7,8 +7,15 @@
 module {
   public type CreditInfo = { total : Nat; locked : Nat; available : Nat };
   public type ManageOrdersError = {
+    #SessionNumberMismatch : Principal;
     #UnknownPrincipal;
-    #cancellation : { index : Nat; error : { #UnknownAsset; #UnknownOrder } };
+    #cancellation : {
+      index : Nat;
+      error : {
+        #UnknownAsset;
+        #UnknownOrder;
+      };
+    };
     #placement : {
       index : Nat;
       error : {
@@ -43,19 +50,26 @@ module {
       #AmountBelowMinimum : {};
     };
   };
+  public type Order = {
+    icrc1Ledger : Principal;
+    price : Float;
+    volume : Nat;
+  };
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
-    icrc84_credit : shared (Principal) -> async Int;
     manageOrders : shared (
       ?{
         #all : ?[Principal];
         #orders : [{ #ask : OrderId; #bid : OrderId }];
       },
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
+      ?Nat,
     ) -> async ManageOrdersResult;
-    queryCredits : shared query () -> async [(Principal, CreditInfo)];
+    queryCredit : shared query (Principal) -> async (CreditInfo, Nat);
+    queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
+    queryBids : query () -> async ([(OrderId, Order, Nat)]);
     icrc84_withdraw : ({
       to : { owner : Principal; subaccount : ?Blob };
       amount : Nat;

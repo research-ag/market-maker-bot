@@ -7,6 +7,7 @@
 import AssocList "mo:base/AssocList";
 import Nat "mo:base/Nat";
 import Prim "mo:prim";
+import Principal "mo:base/Principal";
 
 module {
   public type ExecutionError = {
@@ -21,6 +22,7 @@ module {
     #TooLowOrderError;
     #VolumeStepViolated : { baseVolumeStep : Nat };
     #PriceDigitsOverflow : { maxDigits : Nat };
+    #SessionNumberMismatch : Principal;
   };
 
   public func getErrorMessage(error : ExecutionError) : Text {
@@ -36,6 +38,7 @@ module {
       case (#TooLowOrderError) "Too low order error";
       case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # Nat.toText(baseVolumeStep);
       case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # Nat.toText(maxDigits);
+      case (#SessionNumberMismatch p) "Session number mismatch for asset " # Principal.toText(p);
     };
   };
 

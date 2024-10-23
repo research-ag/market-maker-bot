@@ -10,6 +10,7 @@ import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
 import List "mo:base/List";
+import Option "mo:base/Option";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
 
@@ -47,28 +48,36 @@ module {
       };
     };
 
-    public func getCredit(token : Principal) : async* Int {
-      await ac.icrc84_credit(token);
+    // returns total credit (available + locked)
+    public func getCredit(token : Principal) : async* Nat {
+      let (credit, _) = await ac.queryCredit(token);
+      credit.total;
     };
 
-    public func getCredits() : async* (AssocList.AssocList<Principal, Nat>) {
+    // returns total credits (available + locked)
+    public func getCredits() : async* (AssocList.AssocList<Principal, Nat>, Nat) {
       var map : List.List<(Principal, Nat)> = null;
+      var sessionNumber : ?Nat = null;
       try {
-        let credits : [(Principal, Auction.CreditInfo)] = await ac.queryCredits();
+        let credits : [(Principal, Auction.CreditInfo, Nat)] = await ac.queryCredits();
 
         Debug.print("Credits " # debug_show (credits));
 
         for (credit in credits.vals()) {
           map := List.push<(Principal, Nat)>((credit.0, credit.1.total), map);
+          switch (sessionNumber) {
+            case (?sn) assert credit.2 == sn;
+            case (null) sessionNumber := ?credit.2;
+          };
         };
       } catch (e) {
         Debug.print(Error.message(e));
       };
 
-      return map;
+      (map, Option.get(sessionNumber, 0));
     };
 
-    public func replaceOrders(token : Principal, bid : OrderInfo, ask : OrderInfo) : async* {
+    public func replaceOrders(token : Principal, bid : OrderInfo, ask : OrderInfo, sessionNumber : ?Nat) : async* {
       #Ok : [Nat];
       #Err : Auction.ManageOrdersError;
     } {
@@ -88,6 +97,7 @@ module {
         await ac.manageOrders(
           ?(#all(?[token])), // cancel all orders for tokens
           placements,
+          sessionNumber,
         );
       } catch (_) {
         #Err(#UnknownError);
@@ -105,6 +115,7 @@ module {
         let response = await ac.manageOrders(
           ?(#all(?tokens)), // cancel all orders for tokens
           [],
+          null,
         );
 
         switch (response) {
