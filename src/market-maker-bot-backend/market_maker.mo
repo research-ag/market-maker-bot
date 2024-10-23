@@ -45,11 +45,14 @@ module MarketMaker {
     decimals : Nat32;
   };
 
+  public type MarketPairStrategy = [(spread : (value : Float, bias : Float), strategyWeight : Float)];
+
   public type MarketPairShared = {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
-    spread : (value : Float, bias : Float);
+    locked_quote_credits : Nat;
+    strategy : MarketPairStrategy;
   };
 
   public type MarketPair = {
@@ -58,7 +61,9 @@ module MarketMaker {
     var base_credits : Nat;
     // total quote token credits assigned to this pair: available + locked by currently placed bid
     var quote_credits : Nat;
-    var spread : (value : Float, bias : Float);
+    // currently locked quote token credits, assigned to this pair
+    var locked_quote_credits : Nat;
+    var strategy : MarketPairStrategy;
   };
 
   let digits : Float = 5;
@@ -74,7 +79,8 @@ module MarketMaker {
       pair with
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
-      spread = pair.spread;
+      locked_quote_credits = pair.locked_quote_credits;
+      strategy = pair.strategy;
     };
   };
 
@@ -123,7 +129,8 @@ module MarketMaker {
       // the order to the smallest units of the tokens
       let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
-      let { bid_price; ask_price } = getPrices(pair.spread, rates[i], price_decimals_multiplicator);
+      // todo strategies
+      let { bid_price; ask_price } = getPrices(pair.strategy[0].1, rates[i], price_decimals_multiplicator);
       let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
 
       Vec.add(

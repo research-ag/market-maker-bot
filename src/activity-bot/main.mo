@@ -57,7 +57,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_spread : (value : Float, bias : Float) = (0.1, 0.0);
+  let default_strategy : MarketMaker.MarketPairStrategy = [(1.0, (0.1, 0.0))];
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -501,8 +501,9 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         // calculate multiplicator which help to normalize the price before create
         // the order to the smallest units of the tokens
         let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote_token.decimals) - Int32.fromNat32(pair.base.decimals);
+        // todo strategies
         // get ask price, because in activity bot we want to place higher bid values
-        let { ask_price = price } = MarketMaker.getPrices(pair.spread, U.requireUpperOk(rates[i]), price_decimals_multiplicator);
+        let { ask_price = price } = MarketMaker.getPrices(pair.strategy[0].1, U.requireUpperOk(rates[i]), price_decimals_multiplicator);
         // bid minimum volume
         func getBaseVolumeStep(price : Float) : Nat {
           let p = price / Float.fromInt(1000);

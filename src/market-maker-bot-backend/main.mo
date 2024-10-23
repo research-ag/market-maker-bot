@@ -55,7 +55,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_spread : (value : Float, bias : Float) = (0.05, 0.0);
+  let default_strategy : MarketMaker.MarketPairStrategy = [(1.0, (0.05, 0.0))];
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -116,7 +116,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
       tradingPairs.unshare(tradingPairsDataV3);
-      let (qp, sp) = await* tradingPairs.initTokens(auction, default_spread);
+      let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
@@ -124,6 +124,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+        ignore metrics.addPullValue("locked_quote_credits", labels, func() = pair.locked_quote_credits);
         ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
         ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
       };
@@ -313,12 +314,19 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public shared ({ caller }) func setSpread(baseSymbol : Text, spreadValue : Float, spreadBias : Float) : async () {
+  public shared ({ caller }) func updatePriceStrategy(baseSymbol : Text, strategy : MarketMaker.MarketPairStrategy) : async () {
     await* assertAdminAccess(caller);
     switch (tradingPairs.getPair(baseSymbol)) {
       case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
       case (?p) {
-        p.spread := (spreadValue, spreadBias);
+        var totalWeight : Float = 0;
+        for ((w, _) in strategy.vals()) {
+          totalWeight += w;
+          if (totalWeight > 1) {
+            throw Error.reject("Strategy weights have to sum up to value less or equal than 1.0");
+          };
+        };
+        p.strategy := strategy;
       };
     };
   };
