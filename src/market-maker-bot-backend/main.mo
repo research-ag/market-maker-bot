@@ -41,7 +41,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_spread_value : Float = 0.05;
+  let default_strategy : MarketMaker.MarketPairStrategy = [(1.0, 0.05)];
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -86,7 +86,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
       tradingPairs.unshare(tradingPairsDataV1);
-      let (qp, sp) = await* tradingPairs.refreshTokens(auction, default_spread_value);
+      let (qp, sp) = await* tradingPairs.refreshTokens(auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
@@ -95,7 +95,6 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
         ignore metrics.addPullValue("locked_quote_credits", labels, func() = pair.locked_quote_credits);
-        ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
       };
       is_initializing := false;
       is_initialized := true;
@@ -271,11 +270,18 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func setSpreadValue(baseSymbol : Text, spreadValue : Float) : async () {
+  public func updatePriceStrategy(baseSymbol : Text, strategy : MarketMaker.MarketPairStrategy) : async () {
     switch (tradingPairs.getPair(baseSymbol)) {
       case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
       case (?p) {
-        p.spread_value := spreadValue;
+        var totalWeight : Float = 0;
+        for ((w, _) in strategy.vals()) {
+          totalWeight += w;
+          if (totalWeight > 1) {
+            throw Error.reject("Strategy weights have to sum up to value less or equal than 1.0");
+          };
+        };
+        p.strategy := strategy;
       };
     };
   };

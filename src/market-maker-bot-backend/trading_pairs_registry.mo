@@ -99,7 +99,7 @@ module TradingPairsRegistry {
       sessionNumber;
     };
 
-    public func refreshTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
+    public func refreshTokens(auction : AuctionWrapper.Self, default_strategy : MarketMaker.MarketPairStrategy) : async* (Principal, [Principal]) {
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       let tokens_info = Tokens.getTokensInfo();
@@ -124,7 +124,7 @@ module TradingPairsRegistry {
                 var base_credits = 0;
                 var quote_credits = 0;
                 var locked_quote_credits = 0;
-                var spread_value = default_spread_value;
+                var strategy = default_strategy;
               };
 
               let (upd, oldValue) = AssocList.replace<Text, MarketMaker.MarketPair>(

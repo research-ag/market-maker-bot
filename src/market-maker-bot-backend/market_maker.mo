@@ -42,12 +42,14 @@ module MarketMaker {
     decimals : Nat32;
   };
 
+  public type MarketPairStrategy = [(strategyWeight : Float, spreadValue : Float)];
+
   public type MarketPairShared = {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
     locked_quote_credits : Nat;
-    spread_value : Float;
+    strategy : MarketPairStrategy;
   };
 
   public type MarketPair = {
@@ -58,7 +60,7 @@ module MarketMaker {
     var quote_credits : Nat;
     // currently locked quote token credits, assigned to this pair
     var locked_quote_credits : Nat;
-    var spread_value : Float;
+    var strategy : MarketPairStrategy;
   };
 
   let digits : Float = 5;
@@ -75,7 +77,7 @@ module MarketMaker {
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
       locked_quote_credits = pair.locked_quote_credits;
-      spread_value = pair.spread_value;
+      strategy = pair.strategy;
     };
   };
 
@@ -124,7 +126,8 @@ module MarketMaker {
 
     switch (current_rate_result) {
       case (#Ok(current_rate)) {
-        let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
+        // todo strategies
+        let { bid_price; ask_price } = getPrices(pair.strategy[0].1, current_rate, price_decimals_multiplicator);
         let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
 
         let bid_order : OrderInfo = {

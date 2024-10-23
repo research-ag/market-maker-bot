@@ -44,7 +44,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   let tokens_info : AssocList.AssocList<Principal, Tokens.TokenInfo> = Tokens.getTokensInfo();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_spread_value : Float = 0.1;
+  let default_strategy : MarketMaker.MarketPairStrategy = [(1.0, 0.1)];
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -114,7 +114,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
                 var base_credits = 0;
                 var quote_credits = 0;
                 var locked_quote_credits = 0;
-                var spread_value = default_spread_value;
+                var strategy = default_strategy;
               };
 
               let (upd, oldValue) = AssocList.replace<(quoteSymbol : Text, baseSymbol : Text), MarketMaker.MarketPair>(
@@ -137,7 +137,6 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-        ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
       };
       is_initialized := true;
       is_initializing := false;
@@ -372,8 +371,9 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
         switch (current_rate_result) {
           case (#Ok(current_rate)) {
+            // todo strategies
             // get ask price, because in activity bot we want to place higher bid values
-            let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
+            let { ask_price = price } = MarketMaker.getPrices(pair.strategy[0].1, current_rate, price_decimals_multiplicator);
             // bid minimum volume
             func getBaseVolumeStep(price : Float) : Nat {
               let p = price / Float.fromInt(1000);
