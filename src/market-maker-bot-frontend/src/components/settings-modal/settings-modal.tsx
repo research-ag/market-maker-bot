@@ -75,9 +75,13 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
                                             name={field.name}
                                             value={field.value}
                                             onChange={field.onChange}
-                                            min={0}
-                                            max={1}
-                                            step={0.01}
+                                            slotProps={{
+                                                input: {
+                                                    min: 0,
+                                                    max: 1,
+                                                    step: 0.01,
+                                                },
+                                            }}
                                             autoComplete="off"
                                             error={!!fieldState.error}
                                         />

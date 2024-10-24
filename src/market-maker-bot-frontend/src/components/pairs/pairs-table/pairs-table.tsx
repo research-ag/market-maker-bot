@@ -56,7 +56,7 @@ export const PairsTable = () => {
               <td>
                 <InfoItem content={'' + pair.spread_value} withEdit={true} onEdit={() => {
                   setSelectedItem(pair);
-                  openSettingsModal();
+                  setTimeout(() => openSettingsModal());
                 }}/>
               </td>
             </tr>
