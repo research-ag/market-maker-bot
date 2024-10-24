@@ -190,11 +190,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public query func getHistory(limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
-    let size : Int = Vec.size(history) - skip;
+    let historySize = Vec.size(history);
+    let size : Int = historySize - skip;
     if (size < 1) return [];
     Array.tabulate<HistoryModule.HistoryItemType>(
       Nat.min(Int.abs(size), limit),
-      func(i : Nat) : HistoryModule.HistoryItemType = Vec.get(history, i + skip),
+      func(i : Nat) : HistoryModule.HistoryItemType = Vec.get(history, Int.abs(historySize - skip - i - 1)),
     );
   };
 
