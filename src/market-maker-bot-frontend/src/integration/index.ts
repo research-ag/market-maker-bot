@@ -128,14 +128,32 @@ export const useStopBot = () => {
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   return useMutation(
-    () => bot.stopBot(),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getBotState');
+      () => bot.stopBot(),
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries('getBotState');
+        },
+        onError: (err: unknown) => {
+          enqueueSnackbar(`Failed to stop bot: ${err}`, { variant: 'error' });
+        },
       },
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to stop bot: ${err}`, { variant: 'error' });
+  );
+};
+
+export const useUpdateTradingPairSettings = () => {
+  const { bot } = useBot();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  return useMutation(
+      ({ baseSymbol, spread }: {baseSymbol : string, spread : number}) => bot.setSpreadValue(baseSymbol, spread),
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries('getHistory');
+          queryClient.invalidateQueries('getPairsList');
+        },
+        onError: (err: unknown) => {
+          enqueueSnackbar(`Failed to update trading pair settings: ${err}`, { variant: 'error' });
+        },
       },
-    },
   );
 };
