@@ -1,8 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { useSnackbar } from 'notistack';
+import {useMutation, useQuery, useQueryClient} from 'react-query';
+import {useSnackbar} from 'notistack';
 
-import { useIdentity } from './identity';
-import { canisterId as cid, createActor } from '../declarations/market-maker-bot-backend';
+import {useIdentity} from './identity';
+import {canisterId as cid, createActor} from '../declarations/market-maker-bot-backend';
 
 // Custom replacer function for JSON.stringify
 const bigIntReplacer = (key: string, value: any): any => {
@@ -15,14 +15,30 @@ const bigIntReplacer = (key: string, value: any): any => {
 export const canisterId = cid;
 
 export const useBot = () => {
-  const { identity } = useIdentity();
-  const bot = createActor(canisterId, {
-    agentOptions: {
-      identity,
-      verifyQuerySignatures: false,
-    },
-  });
-  return { bot };
+    const {identity} = useIdentity();
+    const bot = createActor(canisterId, {
+        agentOptions: {
+            identity,
+            verifyQuerySignatures: false,
+        },
+    });
+    return {bot};
+};
+
+export const useGetQuoteReserve = () => {
+    const {bot} = useBot();
+    const {enqueueSnackbar} = useSnackbar();
+    return useQuery(
+        'quoteReserve',
+        async () => {
+            return bot.queryQuoteReserve();
+        },
+        {
+            onError: (err: unknown) => {
+                enqueueSnackbar(`Failed to fetch bot state: ${err}`, {variant: 'error'});
+            },
+        },
+    );
 };
 
 export const useExecuteMarketMaking = () => {
@@ -141,19 +157,39 @@ export const useStopBot = () => {
 };
 
 export const useUpdateTradingPairSettings = () => {
-  const { bot } = useBot();
-  const queryClient = useQueryClient();
-  const { enqueueSnackbar } = useSnackbar();
-  return useMutation(
-      ({ baseSymbol, spread }: {baseSymbol : string, spread : number}) => bot.setSpreadValue(baseSymbol, spread),
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries('getHistory');
-          queryClient.invalidateQueries('getPairsList');
+    const {bot} = useBot();
+    const queryClient = useQueryClient();
+    const {enqueueSnackbar} = useSnackbar();
+    return useMutation(
+        ({baseSymbol, spread}: { baseSymbol: string, spread: number }) => bot.setSpreadValue(baseSymbol, spread),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('getPairsList');
+            },
+            onError: (err: unknown) => {
+                enqueueSnackbar(`Failed to update trading pair settings: ${err}`, {variant: 'error'});
+            },
         },
-        onError: (err: unknown) => {
-          enqueueSnackbar(`Failed to update trading pair settings: ${err}`, { variant: 'error' });
+    );
+};
+
+export const useUpdateTradingPairQuoteBalance = () => {
+    const {bot} = useBot();
+    const queryClient = useQueryClient();
+    const {enqueueSnackbar} = useSnackbar();
+    return useMutation(
+        ({baseSymbol, balance}: {
+            baseSymbol: string,
+            balance: number
+        }) => bot.setQuoteBalance(baseSymbol, {set: BigInt(balance)}),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('getPairsList');
+                queryClient.invalidateQueries('quoteReserve');
+            },
+            onError: (err: unknown) => {
+                enqueueSnackbar(`Failed to update trading pair quote balance: ${err}`, {variant: 'error'});
+            },
         },
-      },
-  );
+    );
 };
