@@ -46,7 +46,7 @@ module MarketMaker {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
-    locked_quote_credits : Nat;
+    last_sync_session_number : ?Nat;
     spread_value : Float;
   };
 
@@ -56,8 +56,8 @@ module MarketMaker {
     var base_credits : Nat;
     // total quote token credits assigned to this pair: available + locked by currently placed bid
     var quote_credits : Nat;
-    // currently locked quote token credits, assigned to this pair
-    var locked_quote_credits : Nat;
+    // last quote credits synchronization session number
+    var last_sync_session_number : ?Nat;
     var spread_value : Float;
   };
 
@@ -74,7 +74,7 @@ module MarketMaker {
       pair with
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
-      locked_quote_credits = pair.locked_quote_credits;
+      last_sync_session_number = pair.last_sync_session_number;
       spread_value = pair.spread_value;
     };
   };
@@ -111,7 +111,7 @@ module MarketMaker {
     pair : MarketPair,
     xrc : OracleWrapper.Self,
     ac : AuctionWrapper.Self,
-    sessionNumber : ?Nat,
+    sessionNumber : Nat,
   ) : async* {
     #Ok : (OrderInfo, OrderInfo, Float);
     #Err : (U.ExecutionError, ?OrderInfo, ?OrderInfo, ?Float);
@@ -136,11 +136,11 @@ module MarketMaker {
           price = ask_price;
         };
 
-        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order, sessionNumber);
+        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order, ?sessionNumber);
 
         switch (replace_orders_result) {
           case (#Ok _) {
-            pair.locked_quote_credits := (bid_order.price * Float.fromInt(bid_order.amount) |> Int.abs(Float.toInt(Float.ceil(_))));
+            pair.last_sync_session_number := ?sessionNumber;
             #Ok(bid_order, ask_order, current_rate);
           };
           case (#Err(err)) {

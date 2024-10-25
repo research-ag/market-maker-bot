@@ -105,7 +105,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
           switch (AssocList.find(tokens_info, token, Principal.equal)) {
             case (?_) {
               let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.equal, "Error get base token info");
-              let pair = {
+              let pair : MarketMaker.MarketPair = {
                 base = {
                   principal = token;
                   symbol = base_token_info.symbol;
@@ -113,7 +113,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var locked_quote_credits = 0;
+                var last_sync_session_number = null;
                 var spread_value = default_spread_value;
               };
 

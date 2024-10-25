@@ -14,6 +14,7 @@ import Float "mo:base/Float";
 import Int "mo:base/Int";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
+import Option "mo:base/Option";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
@@ -94,7 +95,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-        ignore metrics.addPullValue("locked_quote_credits", labels, func() = pair.locked_quote_credits);
+        ignore metrics.addPullValue("last_sync_session_number", labels, func() = Option.get(pair.last_sync_session_number, 0));
         ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
       };
       is_initializing := false;
@@ -297,7 +298,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public func executeMarketMaking() : async () {
-    let sessionNumber = ?(await* tradingPairs.refreshCredits(auction));
+    let sessionNumber = await* tradingPairs.refreshCredits(auction);
 
     for (market_pair in tradingPairs.getPairs().vals()) {
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {

@@ -55,6 +55,7 @@ module {
     price : Float;
     volume : Nat;
   };
+  public type TransactionHistoryItem = (timestamp : Nat64, sessionNumber : Nat, kind : { #ask; #bid }, ledgerPrincipal : Principal, volume : Nat, price : Float);
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
     manageOrders : shared (
@@ -76,5 +77,6 @@ module {
       token : Principal;
       expected_fee : ?Nat;
     }) -> async WithdrawResult;
+    queryTransactionHistory : query (token : ?Principal, limit : Nat, skip : Nat) -> async [TransactionHistoryItem];
   };
 };

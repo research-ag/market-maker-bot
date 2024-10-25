@@ -7,7 +7,6 @@ import List "mo:base/List";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 
-import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import MarketMaker "./market_maker";
 import Tokens "./tokens";
@@ -66,20 +65,32 @@ module TradingPairsRegistry {
     public func refreshCredits(auction : AuctionWrapper.Self) : async* Nat {
       // pull pure credits from the auction
       let (credits, sessionNumber) = await* auction.getCredits();
-      let activeBids = await auction.getAuction().queryBids();
       // update buckets if any of already placed bids were fulfilled
-      for ((_, pair) in List.toIter(registry)) {
-        let activeBid = Array.find<(Any, Auction.Order, Nat)>(activeBids, func((_, { icrc1Ledger }, _)) = Principal.equal(icrc1Ledger, pair.base.principal));
-        let lockedQuote = switch (activeBid) {
-          case (null) 0;
-          case (?(_, bid, sn)) {
-            assert sn == sessionNumber;
-            (bid.price * Float.fromInt(bid.volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+      let countSpentQuoteTokens = func(asset : Principal, lastSyncSessionNumber : Nat) : async* Nat {
+        var res : Nat = 0;
+        var skip : Nat = 0;
+        let chunkSize : Nat = 100;
+        while (true) {
+          let historyChunk = await auction.getAuction().queryTransactionHistory(?asset, chunkSize, skip);
+          for ((_, sn, kind, _, volume, price) in historyChunk.vals()) {
+            if (sn < lastSyncSessionNumber) return res;
+            switch (kind) {
+              case (#bid) res += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+              case (#ask) {};
+            };
           };
+          if (historyChunk.size() < chunkSize) return res;
+          skip += chunkSize;
         };
-        if (lockedQuote != pair.locked_quote_credits) {
-          pair.quote_credits := Int.abs(pair.quote_credits + lockedQuote - pair.locked_quote_credits);
-          pair.locked_quote_credits := lockedQuote;
+        res;
+      };
+      for ((_, pair) in List.toIter(registry)) {
+        switch (pair.last_sync_session_number) {
+          case (null) {};
+          case (?sn) {
+            pair.quote_credits -= await* countSpentQuoteTokens(pair.base.principal, sn);
+            pair.last_sync_session_number := ?sessionNumber;
+          };
         };
       };
       // calculate quote credits reserve, update values in the registry
@@ -115,7 +126,7 @@ module TradingPairsRegistry {
           switch (AssocList.find(tokens_info, token, Principal.equal)) {
             case (?_) {
               let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.equal, "Error get base token info");
-              let pair = {
+              let pair : MarketMaker.MarketPair = {
                 base = {
                   principal = token;
                   symbol = base_token_info.symbol;
@@ -123,7 +134,7 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var locked_quote_credits = 0;
+                var last_sync_session_number = null;
                 var spread_value = default_spread_value;
               };
 
