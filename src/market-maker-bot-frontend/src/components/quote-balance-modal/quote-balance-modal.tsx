@@ -80,6 +80,11 @@ const QuoteBalanceModal = ({pair, isOpen, onClose}: ModalProps) => {
                                             variant="outlined"
                                             name={field.name}
                                             value={field.value}
+                                            slotProps={{
+                                                input: {
+                                                    step: 1 / Math.pow(10, quoteInfo?.decimals || 6),
+                                                },
+                                            }}
                                             onChange={field.onChange}
                                             autoComplete="off"
                                             error={!!fieldState.error}

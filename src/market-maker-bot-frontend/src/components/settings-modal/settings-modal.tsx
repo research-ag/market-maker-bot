@@ -79,7 +79,7 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
                                                 input: {
                                                     min: 0,
                                                     max: 1,
-                                                    step: 0.01,
+                                                    step: 0.0001,
                                                 },
                                             }}
                                             autoComplete="off"
