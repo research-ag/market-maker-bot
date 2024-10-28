@@ -27,6 +27,7 @@ export const PairsTable = () => {
           <col style={{width: '200px'}}/>
           <col style={{width: '110px'}}/>
           <col style={{width: '110px'}}/>
+          <col style={{width: '110px'}}/>
         </colgroup>
         <thead>
         <tr>
@@ -34,6 +35,7 @@ export const PairsTable = () => {
           <th>Quote Token</th>
           <th>Spread</th>
           <th>Quote balance</th>
+          <th>Base balance</th>
         </tr>
         </thead>
         <tbody>
@@ -69,6 +71,9 @@ export const PairsTable = () => {
                     setSelectedItem(pair);
                     setTimeout(() => setIsQuoteBalanceModalOpen(true));
                   }}/>
+                </td>
+                <td>
+                  <InfoItem content={'' + (Number(pair.base_credits) / Math.pow(10, pair.base.decimals))}/>
                 </td>
               </tr>
           );
