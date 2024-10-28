@@ -66,32 +66,24 @@ module TradingPairsRegistry {
       // pull pure credits from the auction
       let (credits, sessionNumber) = await* auction.getCredits();
       // update buckets if any of already placed bids were fulfilled
-      let countSpentQuoteTokens = func(asset : Principal, lastSyncSessionNumber : Nat) : async* Nat {
-        var res : Nat = 0;
-        var skip : Nat = 0;
+      for ((_, pair) in List.toIter(registry)) {
+        var spentQuoteTokens : Nat = 0;
+        var processedItems : Nat = pair.synchronized_transactions;
         let chunkSize : Nat = 100;
-        while (true) {
-          let historyChunk = await auction.getAuction().queryTransactionHistory(?asset, chunkSize, skip);
-          for ((_, sn, kind, _, volume, price) in historyChunk.vals()) {
-            if (sn < lastSyncSessionNumber) return res;
+        label l while (true) {
+          let (historyChunk, historySessionNumber, auctionInProgress) = await auction.getAuction().queryTransactionHistoryForward(?pair.base.principal, chunkSize, processedItems);
+          if (auctionInProgress or sessionNumber != historySessionNumber) return await* refreshCredits(auction);
+          for ((_, _, kind, _, volume, price) in historyChunk.vals()) {
             switch (kind) {
-              case (#bid) res += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+              case (#bid) spentQuoteTokens += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
               case (#ask) {};
             };
           };
-          if (historyChunk.size() < chunkSize) return res;
-          skip += chunkSize;
+          processedItems += historyChunk.size();
+          if (historyChunk.size() < chunkSize) break l;
         };
-        res;
-      };
-      for ((_, pair) in List.toIter(registry)) {
-        switch (pair.last_sync_session_number) {
-          case (null) {};
-          case (?sn) {
-            pair.quote_credits -= await* countSpentQuoteTokens(pair.base.principal, sn);
-            pair.last_sync_session_number := ?sessionNumber;
-          };
-        };
+        pair.quote_credits -= spentQuoteTokens;
+        pair.synchronized_transactions := processedItems;
       };
       // calculate quote credits reserve, update values in the registry
       var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
@@ -134,7 +126,7 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var last_sync_session_number = null;
+                var synchronized_transactions = 0;
                 var spread_value = default_spread_value;
               };
 

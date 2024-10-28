@@ -46,7 +46,7 @@ module MarketMaker {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
-    last_sync_session_number : ?Nat;
+    synchronized_transactions : Nat;
     spread_value : Float;
   };
 
@@ -56,8 +56,8 @@ module MarketMaker {
     var base_credits : Nat;
     // total quote token credits assigned to this pair: available + locked by currently placed bid
     var quote_credits : Nat;
-    // last quote credits synchronization session number
-    var last_sync_session_number : ?Nat;
+    // amount of seen transaction history items
+    var synchronized_transactions : Nat;
     var spread_value : Float;
   };
 
@@ -74,7 +74,7 @@ module MarketMaker {
       pair with
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
-      last_sync_session_number = pair.last_sync_session_number;
+      synchronized_transactions = pair.synchronized_transactions;
       spread_value = pair.spread_value;
     };
   };
@@ -139,10 +139,7 @@ module MarketMaker {
         let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order, ?sessionNumber);
 
         switch (replace_orders_result) {
-          case (#Ok _) {
-            pair.last_sync_session_number := ?sessionNumber;
-            #Ok(bid_order, ask_order, current_rate);
-          };
+          case (#Ok _) #Ok(bid_order, ask_order, current_rate);
           case (#Err(err)) {
             switch (err) {
               case (#placement(err)) {

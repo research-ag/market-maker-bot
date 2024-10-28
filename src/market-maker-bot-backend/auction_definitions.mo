@@ -70,13 +70,12 @@ module {
     queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
-    queryBids : query () -> async ([(OrderId, Order, Nat)]);
     icrc84_withdraw : ({
       to : { owner : Principal; subaccount : ?Blob };
       amount : Nat;
       token : Principal;
       expected_fee : ?Nat;
     }) -> async WithdrawResult;
-    queryTransactionHistory : query (token : ?Principal, limit : Nat, skip : Nat) -> async [TransactionHistoryItem];
+    queryTransactionHistoryForward : query (token : ?Principal, limit : Nat, skip : Nat) -> async (history : [TransactionHistoryItem], sessionNumber : Nat, auctionInProgress : Bool);
   };
 };
