@@ -5,6 +5,7 @@
 /// Contributors: Timo Hanke
 
 import AssocList "mo:base/AssocList";
+import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
@@ -59,5 +60,25 @@ module {
       case (?o) o;
       case (null) Prim.trap(message);
     };
+  };
+
+  public func sliceIter<T>(iter : Iter.Iter<T>, limit : Nat, skip : Nat) : [T] {
+    var i = 0;
+    while (i < skip) {
+      let ?_ = iter.next() else return [];
+      i += 1;
+    };
+    i := 0;
+    (
+      object {
+        public func next() : ?T {
+          if (i == limit) {
+            return null;
+          };
+          i += 1;
+          iter.next();
+        };
+      }
+    ) |> Iter.toArray(_);
   };
 };

@@ -3,14 +3,7 @@ import {useSnackbar} from 'notistack';
 
 import {useIdentity} from './identity';
 import {canisterId as cid, createActor} from '../declarations/market-maker-bot-backend';
-
-// Custom replacer function for JSON.stringify
-const bigIntReplacer = (key: string, value: any): any => {
-  if (typeof value === 'bigint') {
-    return `${value.toString()}n`; // Serialize BigInts as strings with 'n' suffix
-  }
-  return value;
-};
+import {Principal} from "@dfinity/principal";
 
 export const canisterId = cid;
 
@@ -90,13 +83,13 @@ export const useGetQuoteInfo = () => {
   );
 };
 
-export const useGetHistory = () => {
+export const useGetHistory = (token: string | null) => {
   const { bot } = useBot();
   const { enqueueSnackbar } = useSnackbar();
   return useQuery(
     'getHistory',
     async () => {
-      return bot.getHistory(1000n, 0n);
+      return bot.getHistory(token ? [Principal.fromText(token)] : [], 1000n, 0n);
     },
     {
       onError: (err: unknown) => {
