@@ -33,6 +33,8 @@ module TradingPairsRegistry {
 
     public func quoteInfo() : MarketMaker.TokenDescription = U.requireMsg(quote, "Not initialized");
 
+    public func getQuoteReserve() : Nat = quoteReserve;
+
     public func nPairs() : Nat = List.size(registry);
 
     public func getPairs() : [MarketMaker.MarketPair] {
