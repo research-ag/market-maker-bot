@@ -27,7 +27,7 @@ module {
         #VolumeStepViolated : { baseVolumeStep : Nat };
       };
     };
-    #UnknownError;
+    #UnknownError : Text;
   };
   public type NotifyResult = {
     #Ok : { credit_inc : Nat; credit : Int; deposit_inc : Nat };

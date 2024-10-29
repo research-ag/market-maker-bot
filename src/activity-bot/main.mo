@@ -364,7 +364,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       pair.quote_credits := quote_credits;
 
       if (quote_credits == 0) {
-        addHistoryItem(pair, null, null, "Error processing pair: empty credits for " # Principal.toText(quote_token.principal));
+        addHistoryItem(pair, null, null, "Skip processing pair: empty credits for " # Principal.toText(quote_token.principal));
       } else {
         let current_rate_result = await* oracle.getExchangeRate(pair.base.symbol, quote_token.symbol);
         // calculate multiplicator which help to normalize the price before create
@@ -390,7 +390,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
             let bid_order : MarketMaker.OrderInfo = { amount; price };
 
-            let replace_orders_result = await* auction.replaceOrders(pair.base.principal, bid_order, { amount = 0; price = 0 }, null);
+            let replace_orders_result = await* auction.replaceOrders([(pair.base.principal, bid_order, { amount = 0; price = 0 })], null);
 
             let res = switch (replace_orders_result) {
               case (#Ok(_)) #Ok(bid_order, current_rate);
@@ -409,7 +409,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
                   case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?current_rate);
                   case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?current_rate);
                   case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?current_rate);
-                  case (#UnknownError) #Err(#UnknownError, ?bid_order, ?current_rate);
+                  case (#UnknownError x) #Err(#UnknownError(x), ?bid_order, ?current_rate);
                 };
               };
             };

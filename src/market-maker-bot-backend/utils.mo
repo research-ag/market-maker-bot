@@ -15,7 +15,7 @@ module {
     #PlacementError;
     #CancellationError;
     #UnknownPrincipal;
-    #UnknownError;
+    #UnknownError : Text;
     #RatesError;
     #ConflictOrderError;
     #UnknownAssetError;
@@ -31,7 +31,7 @@ module {
       case (#PlacementError) "Placement order error";
       case (#CancellationError) "Cancellation order error";
       case (#UnknownPrincipal) "Unknown principal error";
-      case (#UnknownError) "Unknown error";
+      case (#UnknownError x) "Unknown error: " # x;
       case (#RatesError) "No rates error";
       case (#ConflictOrderError) "Conflict order error";
       case (#UnknownAssetError) "Unknown asset error";
@@ -59,6 +59,13 @@ module {
     switch (opt) {
       case (?o) o;
       case (null) Prim.trap(message);
+    };
+  };
+
+  public func upperResultToOption<R, E>(r : { #Ok : R; #Err : E }) : ?R {
+    switch r {
+      case (#Ok(x)) { ?x };
+      case (#Err(_)) { null };
     };
   };
 
