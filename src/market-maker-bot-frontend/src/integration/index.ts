@@ -1,28 +1,37 @@
-import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { useSnackbar } from 'notistack';
+import {useMutation, useQuery, useQueryClient} from 'react-query';
+import {useSnackbar} from 'notistack';
 
-import { useIdentity } from './identity';
-import { canisterId as cid, createActor } from '../declarations/market-maker-bot-backend';
-
-// Custom replacer function for JSON.stringify
-const bigIntReplacer = (key: string, value: any): any => {
-  if (typeof value === 'bigint') {
-    return `${value.toString()}n`; // Serialize BigInts as strings with 'n' suffix
-  }
-  return value;
-};
+import {useIdentity} from './identity';
+import {canisterId as cid, createActor} from '../declarations/market-maker-bot-backend';
+import {Principal} from "@dfinity/principal";
 
 export const canisterId = cid;
 
 export const useBot = () => {
-  const { identity } = useIdentity();
-  const bot = createActor(canisterId, {
-    agentOptions: {
-      identity,
-      verifyQuerySignatures: false,
-    },
-  });
-  return { bot };
+    const {identity} = useIdentity();
+    const bot = createActor(canisterId, {
+        agentOptions: {
+            identity,
+            verifyQuerySignatures: false,
+        },
+    });
+    return {bot};
+};
+
+export const useGetQuoteReserve = () => {
+    const {bot} = useBot();
+    const {enqueueSnackbar} = useSnackbar();
+    return useQuery(
+        'quoteReserve',
+        async () => {
+            return bot.queryQuoteReserve();
+        },
+        {
+            onError: (err: unknown) => {
+                enqueueSnackbar(`Failed to fetch bot state: ${err}`, {variant: 'error'});
+            },
+        },
+    );
 };
 
 export const useExecuteMarketMaking = () => {
@@ -74,13 +83,13 @@ export const useGetQuoteInfo = () => {
   );
 };
 
-export const useGetHistory = () => {
+export const useGetHistory = (token: string | null) => {
   const { bot } = useBot();
   const { enqueueSnackbar } = useSnackbar();
   return useQuery(
     'getHistory',
     async () => {
-      return bot.getHistory(1000n, 0n);
+      return bot.getHistory(token ? [Principal.fromText(token)] : [], 1000n, 0n);
     },
     {
       onError: (err: unknown) => {
@@ -128,14 +137,52 @@ export const useStopBot = () => {
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   return useMutation(
-    () => bot.stopBot(),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('getBotState');
+      () => bot.stopBot(),
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries('getBotState');
+        },
+        onError: (err: unknown) => {
+          enqueueSnackbar(`Failed to stop bot: ${err}`, { variant: 'error' });
+        },
       },
-      onError: (err: unknown) => {
-        enqueueSnackbar(`Failed to stop bot: ${err}`, { variant: 'error' });
-      },
-    },
   );
+};
+
+export const useUpdateTradingPairSettings = () => {
+    const {bot} = useBot();
+    const queryClient = useQueryClient();
+    const {enqueueSnackbar} = useSnackbar();
+    return useMutation(
+        ({baseSymbol, spread}: { baseSymbol: string, spread: number }) => bot.setSpreadValue(baseSymbol, spread),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('getPairsList');
+            },
+            onError: (err: unknown) => {
+                enqueueSnackbar(`Failed to update trading pair settings: ${err}`, {variant: 'error'});
+            },
+        },
+    );
+};
+
+export const useUpdateTradingPairQuoteBalance = () => {
+    const {bot} = useBot();
+    const queryClient = useQueryClient();
+    const {enqueueSnackbar} = useSnackbar();
+    return useMutation(
+        ({baseSymbol, balance}: {
+            baseSymbol: string,
+            balance: number
+        }) => bot.setQuoteBalance(baseSymbol, {set: BigInt(balance)}),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('getPairsList');
+                queryClient.invalidateQueries('quoteReserve');
+            },
+            onError: (err: unknown) => {
+                enqueueSnackbar(`Failed to update trading pair quote balance: ${err}`, {variant: 'error'});
+            },
+        },
+    );
 };

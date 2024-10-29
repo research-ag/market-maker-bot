@@ -12,6 +12,7 @@ import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
+import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
 import Principal "mo:base/Principal";
@@ -189,13 +190,13 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     );
   };
 
-  public query func getHistory(limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
-    let size : Int = Vec.size(history) - skip;
-    if (size < 1) return [];
-    Array.tabulate<HistoryModule.HistoryItemType>(
-      Nat.min(Int.abs(size), limit),
-      func(i : Nat) : HistoryModule.HistoryItemType = Vec.get(history, i + skip),
-    );
+  public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
+    var iter = Vec.valsRev<HistoryModule.HistoryItemType>(history);
+    switch (token) {
+      case (?t) iter := Iter.filter<HistoryModule.HistoryItemType>(iter, func(x) = x.pair.base.principal == t);
+      case (null) {};
+    };
+    U.sliceIter(iter, limit, skip);
   };
 
   public query func getBotState() : async (BotState) {
@@ -279,6 +280,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       };
     };
   };
+
+  public query func queryQuoteReserve() : async Nat = async tradingPairs.getQuoteReserve();
 
   public func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
     await* tradingPairs.setQuoteBalance(baseSymbol, balance);

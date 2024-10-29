@@ -1,49 +1,81 @@
-import { Box, Button, Table } from '@mui/joy';
+import {Box, Table} from '@mui/joy';
 
-import { useGetPairsList } from '../../../integration';
+import {useGetPairsList, useGetQuoteInfo} from '../../../integration';
 import InfoItem from '../../root/info-item';
-import { displayWithDecimals } from '../../../utils';
+import {useState} from "react";
+import SettingsModal from "../../settings-modal";
+import {MarketPairShared} from "../../../declarations/market-maker-bot-backend/market-maker-bot-backend.did";
+import QuoteBalanceModal from "../../quote-balance-modal";
 
 export const PairsTable = () => {
+  const {data: quoteInfo, isFetching: isQuoteInfoFetching} = useGetQuoteInfo();
   const { data: pairsList, isFetching } = useGetPairsList();
+
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isQuoteBalanceModalOpen, setIsQuoteBalanceModalOpen] = useState(false);
+
+  const [selectedItem, setSelectedItem] = useState<MarketPairShared>({ base: { symbol: '-'}, spread_value: 0.05 } as any);
+
   return (
     <Box sx={{ width: '100%', overflow: 'auto' }}>
+      <SettingsModal pair={selectedItem} isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)}/>
+      <QuoteBalanceModal pair={selectedItem} isOpen={isQuoteBalanceModalOpen}
+                         onClose={() => setIsQuoteBalanceModalOpen(false)}/>
       <Table>
         <colgroup>
-          <col style={{ width: '200px' }} />
-          <col style={{ width: '200px' }} />
-          <col style={{ width: '110px' }} />
+          <col style={{width: '200px'}}/>
+          <col style={{width: '200px'}}/>
+          <col style={{width: '110px'}}/>
+          <col style={{width: '110px'}}/>
+          <col style={{width: '110px'}}/>
         </colgroup>
         <thead>
         <tr>
           <th>Base Token</th>
           <th>Quote Token</th>
           <th>Spread</th>
+          <th>Quote balance</th>
+          <th>Base balance</th>
         </tr>
         </thead>
         <tbody>
-        {(isFetching) && (
+        {(isFetching || isQuoteInfoFetching) && (
           <tr>
             <td colSpan={3}>
               Loading...
             </td>
             </tr>
         )}
-        {!(isFetching) && (pairsList ?? []).map((pair: any, i: number) => {
+        {!(isFetching || isQuoteInfoFetching) && (pairsList ?? []).map((pair, i) => {
           return (
-            <tr key={i}>
-              <td>
-                <InfoItem content={pair.base_symbol} withCopy={true} />
-                <InfoItem content={pair.base_principal.toText()} withCopy={true} />
-                <InfoItem content={`Decimals ${pair.base_decimals}`} />
-              </td>
-              <td>
-                <InfoItem content={pair.quote_symbol} withCopy={true} />
-                <InfoItem content={pair.quote_principal.toText()} withCopy={true} />
-                <InfoItem content={`Decimals ${pair.quote_decimals}`} />
-              </td>
-              <td>{pair.spread_value}</td>
-            </tr>
+              <tr key={i}>
+                <td>
+                  <InfoItem content={pair.base.symbol} withCopy={true}/>
+                  <InfoItem content={pair.base.principal.toText()} withCopy={true}/>
+                  <InfoItem content={`Decimals ${pair.base.decimals}`}/>
+                </td>
+                <td>
+                  <InfoItem content={quoteInfo?.symbol || '-'} withCopy={true}/>
+                  <InfoItem content={quoteInfo?.principal.toText() || '-'} withCopy={true}/>
+                  <InfoItem content={`Decimals ${quoteInfo?.decimals || '-'}`}/>
+                </td>
+                <td>
+                  <InfoItem content={'' + pair.spread_value} withEdit={true} onEdit={() => {
+                    setSelectedItem(pair);
+                    setTimeout(() => setIsSettingsModalOpen(true));
+                  }}/>
+                </td>
+                <td>
+                  <InfoItem content={'' + (Number(pair.quote_credits) / Math.pow(10, quoteInfo?.decimals || 0))}
+                            withEdit={true} onEdit={() => {
+                    setSelectedItem(pair);
+                    setTimeout(() => setIsQuoteBalanceModalOpen(true));
+                  }}/>
+                </td>
+                <td>
+                  <InfoItem content={'' + (Number(pair.base_credits) / Math.pow(10, pair.base.decimals))}/>
+                </td>
+              </tr>
           );
         })}
         </tbody>

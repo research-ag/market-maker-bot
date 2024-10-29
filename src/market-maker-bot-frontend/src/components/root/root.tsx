@@ -1,18 +1,20 @@
-import { useState } from 'react';
-import { Box, Button, Tab, TabList, Tabs } from '@mui/joy';
+import {useState} from 'react';
+import {Box, Tab, TabList, Tabs} from '@mui/joy';
 
-import { canisterId, useGetBotState } from '../../integration';
+import {canisterId, useGetBotState, useGetQuoteInfo, useGetQuoteReserve} from '../../integration';
 
-import { ToggleBotButton } from '../toggle-bot-button';
-import { ThemeButton } from '../theme-button';
-import { Pairs } from '../pairs';
-import { OrdersHistory } from '../orders-history';
+import {ToggleBotButton} from '../toggle-bot-button';
+import {ThemeButton} from '../theme-button';
+import {Pairs} from '../pairs';
+import {OrdersHistory} from '../orders-history';
 
 import InfoItem from './info-item';
 
 const Root = () => {
   const { data: botState, isFetching } = useGetBotState();
   const [tabValue, setTabValue] = useState(0);
+  let {data: quoteReserve} = useGetQuoteReserve();
+  const {data: quoteInfo} = useGetQuoteInfo();
 
   return (
     <Box sx={{ width: '100%', maxWidth: '1200px', p: 4, mx: 'auto' }}>
@@ -26,6 +28,8 @@ const Root = () => {
             <InfoItem label="Initialized" content={botState?.initializing ? 'in progress' : (botState?.initialized ? 'true' : 'false')} />
             <InfoItem label="Timer interval" content={botState?.timer_interval ? `${botState?.timer_interval.toString()} seconds` :  '0 seconds'} />
             <InfoItem label="Quote token principal" content={botState?.quote_token && botState?.quote_token.length ? botState?.quote_token[0].toString() : ''} />
+            <InfoItem label="Quote reserve"
+                      content={'' + (Number(quoteReserve) / Math.pow(10, quoteInfo?.decimals || 0))}/>
             <ToggleBotButton isRunning = {!!botState?.running} isFetching = {isFetching} currentTimer = {botState?.timer_interval ?? 0n}/>
           </Box>
         </Box>
