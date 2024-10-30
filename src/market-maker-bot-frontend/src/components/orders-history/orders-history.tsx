@@ -9,9 +9,9 @@ const transformHistoryItem = (quoteDecimals: number, item: HistoryItemType) => {
     const timestamp = new Date(Number(item.timestamp / 1000000n));
     const bidOrder = item.bidOrder && item.bidOrder.length ? item.bidOrder[0] : null;
     const askOrder = item.askOrder && item.askOrder.length ? item.askOrder[0] : null;
-    const spread = item.pair.spread_value;
-    const baseToken = item.pair.base.symbol;
-    const baseDecimals = item.pair.base.decimals;
+    const spread = item.pair[0]?.spread_value || 'N/A';
+    const baseToken = item.pair[0]?.base.symbol || 'N/A';
+    const baseDecimals = item.pair[0]?.base.decimals || 0;
     const normalize_factor = quoteDecimals - baseDecimals;
     const bidVolume = bidOrder?.amount ? displayWithDecimals(bidOrder?.amount, baseDecimals) : 'N/A';
     const askVolume = askOrder?.amount ? displayWithDecimals(askOrder?.amount, baseDecimals) : 'N/A';

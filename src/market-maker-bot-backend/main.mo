@@ -38,7 +38,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   stable var tradingPairsDataV1 : TPR.StableDataV1 = TPR.defaultStableDataV1();
   stable var tradingPairsDataV2 : TPR.StableDataV2 = TPR.migrateStableDataV2(tradingPairsDataV1);
-  stable let history : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
+
+  stable let historyV2 : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
 
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
@@ -147,7 +148,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
-    Vec.add(history, historyItem);
+    Vec.add(historyV2, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -191,7 +192,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
-    var iter = Vec.valsRev<HistoryModule.HistoryItemType>(history);
+    var iter = Vec.valsRev<HistoryModule.HistoryItemType>(historyV2);
     switch (token) {
       case (?t) iter := Iter.filter<HistoryModule.HistoryItemType>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
