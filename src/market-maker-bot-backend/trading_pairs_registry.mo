@@ -6,6 +6,7 @@ import Int "mo:base/Int";
 import List "mo:base/List";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
+import Debug "mo:base/Debug";
 
 import AuctionWrapper "./auction_wrapper";
 import MarketMaker "./market_maker";
@@ -142,6 +143,7 @@ module TradingPairsRegistry {
       var sessionNumber : Nat = 0;
       let chunkSize : Nat = 500;
       label l while (true) {
+        Debug.print("Replaying transactions history from " # debug_show processedTransactions # "...");
         let (historyChunk, sn, auctionInProgress) = await auction.getAuction().queryTransactionHistoryForward(null, chunkSize, processedTransactions);
         sessionNumber := sn;
         for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
@@ -158,11 +160,15 @@ module TradingPairsRegistry {
         processedTransactions += historyChunk.size();
         if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
       };
+      Debug.print("Transactions history replayed. Applying credits..");
       for ((_, pair) in List.toIter(registry)) {
         switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
           case (null) {};
           case (?tokenIdx) {
-            pair.quote_credits := Int.max(balances[tokenIdx], 0) |> Int.abs(_);
+            let newBalance = Int.max(balances[tokenIdx], 0) |> Int.abs(_);
+            let delta : Int = pair.quote_credits - newBalance;
+            pair.quote_credits := newBalance;
+            quoteReserve := Int.max(quoteReserve + delta, 0) |> Int.abs(_);
           };
         };
       };

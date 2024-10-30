@@ -7,6 +7,7 @@
 /// Contributors: Timo Hanke
 
 import Array "mo:base/Array";
+import Debug "mo:base/Debug";
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
@@ -106,10 +107,20 @@ module MarketMaker {
     };
   };
 
+  public func fetchRates(xrc : OracleWrapper.Self, quote : TokenDescription, pairs : [MarketPair]) : async* ?[Float] {
+    Debug.print("Fetching rates..");
+    var res = Array.init<Float>(pairs.size(), 0);
+    for (i in pairs.keys()) {
+      let ?current_rate = U.upperResultToOption(await* xrc.getExchangeRate(pairs[i].base.symbol, quote.symbol)) else return null;
+      res[i] := current_rate;
+    };
+    ?Array.freeze(res);
+  };
+
   public func execute(
     quote : TokenDescription,
     pairs : [MarketPair],
-    xrc : OracleWrapper.Self,
+    rates : [Float],
     ac : AuctionWrapper.Self,
     sessionNumber : Nat,
   ) : async* {
@@ -117,19 +128,16 @@ module MarketMaker {
     #Err : (U.ExecutionError, ?MarketPairShared, ?OrderInfo, ?OrderInfo, ?Float);
   } {
     let replaceArgs : Vec.Vector<(token : Principal, bid : OrderInfo, ask : OrderInfo)> = Vec.new();
-    let rates : Vec.Vector<Float> = Vec.new();
 
-    for (pair in pairs.vals()) {
-      let ?current_rate = U.upperResultToOption(await* xrc.getExchangeRate(pair.base.symbol, quote.symbol)) else return #Err(#RatesError, null, null, null, null);
-
+    for (i in pairs.keys()) {
+      let pair = pairs[i];
       // calculate multiplicator which help to normalize the price before create
       // the order to the smallest units of the tokens
       let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
-      let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
+      let { bid_price; ask_price } = getPrices(pair.spread_value, rates[i], price_decimals_multiplicator);
       let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
 
-      Vec.add(rates, current_rate);
       Vec.add(
         replaceArgs,
         (
@@ -152,7 +160,7 @@ module MarketMaker {
       case (#Ok _) {
         Array.tabulate<(OrderInfo, OrderInfo, Float)>(
           pairs.size(),
-          func(i) = (Vec.get(replaceArgs, i).1, Vec.get(replaceArgs, i).2, Vec.get(rates, i)),
+          func(i) = (Vec.get(replaceArgs, i).1, Vec.get(replaceArgs, i).2, rates[i]),
         ) |> #Ok(_);
       };
       case (#Err(err)) {
@@ -160,7 +168,7 @@ module MarketMaker {
           case (#placement(err)) {
             let pair = sharePair(pairs[err.index]);
             let (_, bid_order, ask_order) = Vec.get(replaceArgs, err.index);
-            let current_rate = Vec.get(rates, err.index);
+            let current_rate = rates[err.index];
             switch (err.error) {
               case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?pair, ?bid_order, ?ask_order, ?current_rate);
               case (#UnknownAsset) #Err(#UnknownAssetError, ?pair, ?bid_order, ?ask_order, ?current_rate);

@@ -302,10 +302,17 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public func executeMarketMaking() : async () {
+    let pairs = tradingPairs.getPairs();
+    let ?rates = await* MarketMaker.fetchRates(oracle, tradingPairs.quoteInfo(), pairs) else {
+      addHistoryItem(null, null, null, null, U.getErrorMessage(#RatesError));
+      return;
+    };
     let sessionNumber = await* tradingPairs.replayTransactionHistory(auction);
 
-    let pairs : Vec.Vector<MarketMaker.MarketPair> = Vec.new();
-    for (market_pair in tradingPairs.getPairs().vals()) {
+    let pairsToProcess : Vec.Vector<MarketMaker.MarketPair> = Vec.new();
+    let ratesToProcess : Vec.Vector<Float> = Vec.new();
+    for (i in pairs.keys()) {
+      let market_pair = pairs[i];
       if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
         if (market_pair.base_credits == 0) {
           addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
@@ -314,16 +321,17 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
           addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
         };
       } else {
-        Vec.add(pairs, market_pair);
+        Vec.add(pairsToProcess, market_pair);
+        Vec.add(ratesToProcess, rates[i]);
       };
     };
-    let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairs), oracle, auction, sessionNumber);
+    let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, sessionNumber);
 
     switch (execute_result) {
       case (#Ok results) {
         for (i in results.keys()) {
           let (bid_order, ask_order, rate) = results[i];
-          addHistoryItem(?MarketMaker.sharePair(Vec.get(pairs, i)), ?bid_order, ?ask_order, ?rate, "OK");
+          addHistoryItem(?MarketMaker.sharePair(Vec.get(pairsToProcess, i)), ?bid_order, ?ask_order, ?rate, "OK");
         };
       };
       case (#Err(err, market_pair, bid_order, ask_order, rate)) {
