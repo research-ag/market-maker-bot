@@ -133,52 +133,61 @@ module TradingPairsRegistry {
       pair.quote_credits;
     };
 
+    var replayTransactionHistoryLock : Bool = false;
+
     // replay transaction history to update quote token buckets. Returns current session number
     public func replayTransactionHistory(auction : AuctionWrapper.Self) : async* Nat {
-      let pairs : [(Text, MarketMaker.MarketPair)] = List.toArray(registry);
-      let basePrincipals = Array.map<(Text, MarketMaker.MarketPair), Principal>(pairs, func(_, x) = x.base.principal);
-      let quoteBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
-      let baseBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
+      assert not replayTransactionHistoryLock;
+      replayTransactionHistoryLock := true;
 
-      var processedTransactions = synchronizedTransactions;
-      var sessionNumber : Nat = 0;
-      let chunkSize : Nat = 500;
-      label l while (true) {
-        Debug.print("Replaying transactions history from " # debug_show processedTransactions # "...");
-        let (historyChunk, sn, auctionInProgress) = await auction.getAuction().queryTransactionHistoryForward(null, chunkSize, processedTransactions);
-        sessionNumber := sn;
-        for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
-          switch (Array.indexOf<Principal>(token, basePrincipals, Principal.equal)) {
-            case (null) {};
-            case (?tokenIdx) {
-              switch (kind) {
-                case (#bid) {
-                  quoteBalances[tokenIdx] -= (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
-                  baseBalances[tokenIdx] += volume;
-                };
-                case (#ask) {
-                  quoteBalances[tokenIdx] += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.floor(_))));
-                  baseBalances[tokenIdx] -= volume;
+      try {
+        let pairs : [(Text, MarketMaker.MarketPair)] = List.toArray(registry);
+        let basePrincipals = Array.map<(Text, MarketMaker.MarketPair), Principal>(pairs, func(_, x) = x.base.principal);
+        let quoteBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
+        let baseBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
+
+        var processedTransactions = synchronizedTransactions;
+        var sessionNumber : Nat = 0;
+        let chunkSize : Nat = 500;
+        label l while (true) {
+          Debug.print("Replaying transactions history from " # debug_show processedTransactions # "...");
+          let (historyChunk, sn, auctionInProgress) = await auction.getAuction().queryTransactionHistoryForward(null, chunkSize, processedTransactions);
+          sessionNumber := sn;
+          for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
+            switch (Array.indexOf<Principal>(token, basePrincipals, Principal.equal)) {
+              case (null) {};
+              case (?tokenIdx) {
+                switch (kind) {
+                  case (#bid) {
+                    quoteBalances[tokenIdx] -= (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+                    baseBalances[tokenIdx] += volume;
+                  };
+                  case (#ask) {
+                    quoteBalances[tokenIdx] += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.floor(_))));
+                    baseBalances[tokenIdx] -= volume;
+                  };
                 };
               };
             };
           };
+          processedTransactions += historyChunk.size();
+          if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
         };
-        processedTransactions += historyChunk.size();
-        if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
-      };
-      Debug.print("Transactions history replayed (" # debug_show (processedTransactions - synchronizedTransactions : Nat) # " items). Applying credits..");
-      for ((_, pair) in List.toIter(registry)) {
-        switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
-          case (null) {};
-          case (?tokenIdx) {
-            pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
-            pair.quote_credits := Int.max(quoteBalances[tokenIdx], 0) |> Int.abs(_);
+        Debug.print("Transactions history replayed (" # debug_show (processedTransactions - synchronizedTransactions : Nat) # " items). Applying credits..");
+        for ((_, pair) in List.toIter(registry)) {
+          switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
+            case (null) {};
+            case (?tokenIdx) {
+              pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
+              pair.quote_credits := Int.max(quoteBalances[tokenIdx], 0) |> Int.abs(_);
+            };
           };
         };
+        synchronizedTransactions := processedTransactions;
+        sessionNumber;
+      } finally {
+        replayTransactionHistoryLock := false;
       };
-      synchronizedTransactions := processedTransactions;
-      sessionNumber;
     };
 
     // pulls credits from the auction

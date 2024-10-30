@@ -298,6 +298,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         };
       };
     };
+    ignore await* tradingPairs.replayTransactionHistory(auction);
     ignore await* tradingPairs.refreshCredits(auction);
   };
 
