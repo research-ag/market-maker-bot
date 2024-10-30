@@ -137,7 +137,8 @@ module TradingPairsRegistry {
     public func replayTransactionHistory(auction : AuctionWrapper.Self) : async* Nat {
       let pairs : [(Text, MarketMaker.MarketPair)] = List.toArray(registry);
       let basePrincipals = Array.map<(Text, MarketMaker.MarketPair), Principal>(pairs, func(_, x) = x.base.principal);
-      let balances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
+      let quoteBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
+      let baseBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
 
       var processedTransactions = synchronizedTransactions;
       var sessionNumber : Nat = 0;
@@ -151,8 +152,14 @@ module TradingPairsRegistry {
             case (null) {};
             case (?tokenIdx) {
               switch (kind) {
-                case (#bid) balances[tokenIdx] -= (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
-                case (#ask) balances[tokenIdx] += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.floor(_))));
+                case (#bid) {
+                  quoteBalances[tokenIdx] -= (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+                  baseBalances[tokenIdx] += volume;
+                };
+                case (#ask) {
+                  quoteBalances[tokenIdx] += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.floor(_))));
+                  baseBalances[tokenIdx] -= volume;
+                };
               };
             };
           };
@@ -165,10 +172,8 @@ module TradingPairsRegistry {
         switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
           case (null) {};
           case (?tokenIdx) {
-            let newBalance = Int.max(balances[tokenIdx], 0) |> Int.abs(_);
-            let delta : Int = pair.quote_credits - newBalance;
-            pair.quote_credits := newBalance;
-            quoteReserve := Int.max(quoteReserve + delta, 0) |> Int.abs(_);
+            pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
+            pair.quote_credits := Int.max(quoteBalances[tokenIdx], 0) |> Int.abs(_);
           };
         };
       };

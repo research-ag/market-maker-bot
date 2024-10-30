@@ -26,7 +26,7 @@ module MarketMaker {
     ask_price : Float;
   };
 
-  type ValumesInfo = {
+  type VolumesInfo = {
     bid_volume : Nat;
     ask_volume : Nat;
   };
@@ -97,7 +97,7 @@ module MarketMaker {
     Int.abs(10 ** Float.toInt(zf));
   };
 
-  func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
+  func getVolumes(credits : CreditsInfo, prices : PricesInfo) : VolumesInfo {
     let volume_step = calculateVolumeStep(prices.bid_price);
     let truncToStep : Nat -> Nat = func(x) = x - x % volume_step;
     let bid_volume : Nat = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price)));
