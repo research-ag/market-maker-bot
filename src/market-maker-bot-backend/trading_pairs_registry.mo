@@ -93,7 +93,6 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var synchronized_transactions = 0;
                 var spread_value = default_spread_value;
               };
 

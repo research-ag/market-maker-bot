@@ -113,7 +113,6 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var synchronized_transactions = 0;
                 var spread_value = default_spread_value;
               };
 
