@@ -160,7 +160,7 @@ module TradingPairsRegistry {
         processedTransactions += historyChunk.size();
         if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
       };
-      Debug.print("Transactions history replayed. Applying credits..");
+      Debug.print("Transactions history replayed (" # debug_show (processedTransactions - synchronizedTransactions : Nat) # " items). Applying credits..");
       for ((_, pair) in List.toIter(registry)) {
         switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
           case (null) {};
