@@ -97,7 +97,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-        ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
+        ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 10000)));
       };
       is_initializing := false;
       is_initialized := true;
