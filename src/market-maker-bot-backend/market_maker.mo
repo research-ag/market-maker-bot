@@ -7,7 +7,6 @@
 /// Contributors: Timo Hanke
 
 import Array "mo:base/Array";
-import Debug "mo:base/Debug";
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
@@ -16,7 +15,6 @@ import Int32 "mo:base/Int32";
 
 import Vec "mo:vector";
 
-import OracleWrapper "./oracle_wrapper";
 import AuctionWrapper "./auction_wrapper";
 import U "./utils";
 
@@ -105,16 +103,6 @@ module MarketMaker {
       bid_volume = truncToStep(bid_volume);
       ask_volume = truncToStep(credits.base_credit);
     };
-  };
-
-  public func fetchRates(xrc : OracleWrapper.Self, quote : TokenDescription, pairs : [MarketPair]) : async* ?[Float] {
-    Debug.print("Fetching rates..");
-    var res = Array.init<Float>(pairs.size(), 0);
-    for (i in pairs.keys()) {
-      let ?current_rate = U.upperResultToOption(await* xrc.getExchangeRate(pairs[i].base.symbol, quote.symbol)) else return null;
-      res[i] := current_rate;
-    };
-    ?Array.freeze(res);
   };
 
   public func execute(

@@ -309,7 +309,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     executionLock := true;
     try {
       let pairs = tradingPairs.getPairs();
-      let ?rates = await* MarketMaker.fetchRates(oracle, tradingPairs.quoteInfo(), pairs) else {
+      let ?rates = await* oracle.fetchRates(
+        tradingPairs.quoteInfo().symbol,
+        pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
+      ) else {
         addHistoryItem(null, null, null, null, U.getErrorMessage(#RatesError));
         executionLock := false;
         return;

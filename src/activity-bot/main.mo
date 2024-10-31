@@ -61,6 +61,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
   ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
+  ignore metrics.addPullValue("quote_credits", "", func() = switch (marketPairs) { case (?(p, _)) { p.1.quote_credits }; case (_) { 0 } });
 
   func getState() : (BotState) {
     {
@@ -135,7 +136,6 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         let labels = "base=\"" # pair.base.symbol # "\"";
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
-        ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
         ignore metrics.addPullValue("spread_percent", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 100)));
       };
       is_initialized := true;
@@ -182,7 +182,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     );
   };
 
-  func addHistoryItem(pair : MarketMaker.MarketPair, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
+  func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, rate, message);
     Vec.add(history, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
@@ -207,11 +207,11 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
     switch (execute_result) {
       case (#Ok) {
-        addHistoryItem(pairs[0].1, null, null, "BIDS REMOVED");
+        addHistoryItem(null, null, null, "BIDS REMOVED");
         return #Ok;
       };
       case (#Err(err)) {
-        addHistoryItem(pairs[0].1, null, null, "BIDS REMOVING ERROR: " # U.getErrorMessage(err));
+        addHistoryItem(null, null, null, "BIDS REMOVING ERROR: " # U.getErrorMessage(err));
         return #Err;
       };
     };
@@ -354,72 +354,96 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
+  var executionLock : Bool = false;
+
   public func executeActivityBot() : async () {
-    let quote_credits = await* getQuoteCredit();
-    let quote_token = U.requireMsg(quote, "Not initialized");
+    assert not executionLock;
+    executionLock := true;
 
-    for ((_, pair) in List.toIter(marketPairs)) {
-
-      pair.quote_credits := quote_credits;
+    try {
+      let quote_credits = await* getQuoteCredit();
+      let quote_token = U.requireMsg(quote, "Not initialized");
+      let pairs = List.toArray(marketPairs);
 
       if (quote_credits == 0) {
-        addHistoryItem(pair, null, null, "Skip processing pair: empty credits for " # Principal.toText(quote_token.principal));
-      } else {
-        let current_rate_result = await* oracle.getExchangeRate(pair.base.symbol, quote_token.symbol);
+        addHistoryItem(null, null, null, "Skip processing: empty quote credits");
+        executionLock := false;
+        return;
+      };
+
+      let ?rates = await* oracle.fetchRates(
+        pairs[0].0.0,
+        pairs |> Array.map<((Text, Text), MarketMaker.MarketPair), Text>(_, func(x) = x.1.base.symbol),
+      ) else {
+        addHistoryItem(null, null, null, U.getErrorMessage(#RatesError));
+        executionLock := false;
+        return;
+      };
+
+      let bids : [var MarketMaker.OrderInfo] = Array.init<MarketMaker.OrderInfo>(pairs.size(), { amount = 0; price = 0 });
+      for (i in pairs.keys()) {
+        let pair = pairs[i].1;
+        pair.quote_credits := quote_credits;
+        let current_rate = rates[i];
+
         // calculate multiplicator which help to normalize the price before create
         // the order to the smallest units of the tokens
         let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote_token.decimals) - Int32.fromNat32(pair.base.decimals);
+        // get ask price, because in activity bot we want to place higher bid values
+        let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
+        // bid minimum volume
+        func getBaseVolumeStep(price : Float) : Nat {
+          let p = price / Float.fromInt(1000);
+          if (p >= 1) return 1;
+          let zf = - Float.log(p) / 2.302_585_092_994_045;
+          Int.abs(10 ** Float.toInt(zf));
+        };
+        let volumeStep = getBaseVolumeStep(price);
+        var amount = (5000.0 / price) |> Float.ceil(_) |> Float.toInt(_) |> Int.abs(_);
+        if (amount % volumeStep > 0) {
+          amount += volumeStep - (amount % volumeStep);
+        };
+        bids[i] := { amount; price };
+      };
 
-        switch (current_rate_result) {
-          case (#Ok(current_rate)) {
-            // get ask price, because in activity bot we want to place higher bid values
-            let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
-            // bid minimum volume
-            func getBaseVolumeStep(price : Float) : Nat {
-              let p = price / Float.fromInt(1000);
-              if (p >= 1) return 1;
-              let zf = - Float.log(p) / 2.302_585_092_994_045;
-              Int.abs(10 ** Float.toInt(zf));
-            };
-            let volumeStep = getBaseVolumeStep(price);
-            var amount = (5000.0 / price) |> Float.ceil(_) |> Float.toInt(_) |> Int.abs(_);
-            if (amount % volumeStep > 0) {
-              amount += volumeStep - (amount % volumeStep);
-            };
+      let replace_orders_result = await* auction.replaceOrders(
+        Array.tabulate<(Principal, MarketMaker.OrderInfo, MarketMaker.OrderInfo)>(
+          pairs.size(),
+          func(i) = (pairs[i].1.base.principal, bids[i], { amount = 0; price = 0 }),
+        ),
+        null,
+      );
 
-            let bid_order : MarketMaker.OrderInfo = { amount; price };
-
-            let replace_orders_result = await* auction.replaceOrders([(pair.base.principal, bid_order, { amount = 0; price = 0 })], null);
-
-            let res = switch (replace_orders_result) {
-              case (#Ok(_)) #Ok(bid_order, current_rate);
-              case (#Err(err)) {
-                switch (err) {
-                  case (#placement(err)) {
-                    switch (err.error) {
-                      case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?bid_order, ?current_rate);
-                      case (#UnknownAsset) #Err(#UnknownAssetError, ?bid_order, ?current_rate);
-                      case (#NoCredit) #Err(#NoCreditError, ?bid_order, ?current_rate);
-                      case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?current_rate);
-                      case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?bid_order, ?current_rate);
-                      case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?current_rate);
-                    };
-                  };
-                  case (#cancellation(err)) #Err(#CancellationError, ?bid_order, ?current_rate);
-                  case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?current_rate);
-                  case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?current_rate);
-                  case (#UnknownError x) #Err(#UnknownError(x), ?bid_order, ?current_rate);
-                };
+      switch (replace_orders_result) {
+        case (#Ok results) {
+          for (i in results.keys()) {
+            addHistoryItem(?MarketMaker.sharePair(pairs[i].1), ?bids[i], ?rates[i], "OK");
+          };
+        };
+        case (#Err(err)) {
+          switch (err) {
+            case (#placement(err)) {
+              let pair = ?MarketMaker.sharePair(pairs[err.index].1);
+              let bid_order = ?bids[err.index];
+              let rate = ?rates[err.index];
+              switch (err.error) {
+                case (#ConflictingOrder(_)) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#ConflictOrderError));
+                case (#UnknownAsset) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#UnknownAssetError));
+                case (#NoCredit) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#NoCreditError));
+                case (#TooLowOrder) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#TooLowOrderError));
+                case (#VolumeStepViolated x) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#VolumeStepViolated(x)));
+                case (#PriceDigitsOverflow x) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#PriceDigitsOverflow(x)));
               };
             };
-            switch (res) {
-              case (#Ok(bid_order, rate)) addHistoryItem(pair, ?bid_order, ?rate, "OK");
-              case (#Err(err, bid_order, rate)) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(err));
-            };
+            case (#cancellation(err)) addHistoryItem(null, null, null, U.getErrorMessage(#CancellationError));
+            case (#SessionNumberMismatch x) addHistoryItem(null, null, null, U.getErrorMessage(#SessionNumberMismatch(x)));
+            case (#UnknownPrincipal) addHistoryItem(null, null, null, U.getErrorMessage(#UnknownPrincipal));
+            case (#UnknownError x) addHistoryItem(null, null, null, U.getErrorMessage(#UnknownError(x)));
           };
-          case (#Err(#ErrorGetRates)) addHistoryItem(pair, null, null, U.getErrorMessage(#RatesError));
         };
       };
+    } finally {
+      executionLock := false;
     };
   };
 
