@@ -1,5 +1,4 @@
 import Array "mo:base/Array";
-import AssocList "mo:base/AssocList";
 import Blob "mo:base/Blob";
 import Bool "mo:base/Bool";
 import Debug "mo:base/Debug";
@@ -7,7 +6,6 @@ import Float "mo:base/Float";
 import Int "mo:base/Int";
 import Int32 "mo:base/Int32";
 import Iter "mo:base/Iter";
-import List "mo:base/List";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
 import Prim "mo:prim";
@@ -23,7 +21,6 @@ import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
 import HTTP "../market-maker-bot-backend/http";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
-import Tokens "../market-maker-bot-backend/tokens";
 import TPR "../market-maker-bot-backend/trading_pairs_registry";
 import U "../market-maker-bot-backend/utils";
 
