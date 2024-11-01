@@ -21,7 +21,7 @@ module TradingPairsRegistry {
     synchronizedTransactions : Nat;
   };
 
-  public func defaultStableDataV2() : StableDataV1 = {
+  public func defaultStableDataV2() : StableDataV2 = {
     registry = null;
     quoteReserve = 0;
     synchronizedTransactions = 0;

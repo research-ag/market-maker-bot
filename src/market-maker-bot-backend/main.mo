@@ -61,6 +61,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
   ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
+  ignore metrics.addPullValue("quote_reserve", "", tradingPairs.getQuoteReserve);
 
   func getState() : (BotState) {
     {
