@@ -56,6 +56,14 @@ module TradingPairsRegistry {
 
     public func getQuoteReserve() : Nat = quoteReserve;
 
+    public func getTotalQuoteCredits() : Nat {
+      var total = getQuoteReserve();
+      for (pair in getPairs().vals()) {
+        total += pair.quote_credits;
+      };
+      total;
+    };
+
     public func nPairs() : Nat = List.size(registry);
 
     public func getPairs() : [MarketMaker.MarketPair] {
@@ -180,6 +188,10 @@ module TradingPairsRegistry {
             case (?tokenIdx) {
               pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
               pair.quote_credits := Int.max(quoteBalances[tokenIdx], 0) |> Int.abs(_);
+              // if removed more than available in bucket - decrement from quote reserve
+              if (quoteBalances[tokenIdx] < 0) {
+                quoteReserve := Int.max(quoteReserve + quoteBalances[tokenIdx], 0) |> Int.abs(_);
+              };
             };
           };
         };

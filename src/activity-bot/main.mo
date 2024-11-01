@@ -61,17 +61,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
   ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
-  ignore metrics.addPullValue(
-    "quote_credits",
-    "",
-    func() {
-      var total = tradingPairs.getQuoteReserve();
-      for (pair in tradingPairs.getPairs().vals()) {
-        total += pair.quote_credits;
-      };
-      total;
-    },
-  );
+  ignore metrics.addPullValue("quote_credits", "", tradingPairs.getTotalQuoteCredits);
 
   func getState() : (BotState) {
     {
@@ -346,9 +336,8 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       ignore await* tradingPairs.replayTransactionHistory(auction);
 
       let quote_token = tradingPairs.quoteInfo();
-      let quote_credits = (await* auction.getCredit(quote_token.principal)) |> Int.abs(Int.max(0, _));
 
-      if (quote_credits == 0) {
+      if (tradingPairs.getTotalQuoteCredits() == 0) {
         addHistoryItem(null, null, null, "Skip processing: empty quote credits");
         executionLock := false;
         return;
