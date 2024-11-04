@@ -342,25 +342,25 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         executionLock := false;
         return;
       };
-      let ?rates = await* oracle.fetchRates(
+      let rates = await* oracle.fetchRates(
         quote_token.symbol,
         pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
-      ) else {
-        addHistoryItem(null, null, null, U.getErrorMessage(#RatesError));
-        executionLock := false;
-        return;
-      };
+      );
 
-      let bids : [var MarketMaker.OrderInfo] = Array.init<MarketMaker.OrderInfo>(pairs.size(), { amount = 0; price = 0 });
-      for (i in pairs.keys()) {
+      let placements : Vec.Vector<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)> = Vec.new();
+      label L for (i in pairs.keys()) {
         let pair = pairs[i];
-        let current_rate = rates[i];
+
+        if (rates[i] == null) {
+          addHistoryItem(?MarketMaker.sharePair(pair), null, null, U.getErrorMessage(#RatesError));
+          continue L;
+        };
 
         // calculate multiplicator which help to normalize the price before create
         // the order to the smallest units of the tokens
         let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote_token.decimals) - Int32.fromNat32(pair.base.decimals);
         // get ask price, because in activity bot we want to place higher bid values
-        let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
+        let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, U.require(rates[i]), price_decimals_multiplicator);
         // bid minimum volume
         func getBaseVolumeStep(price : Float) : Nat {
           let p = price / Float.fromInt(1000);
@@ -373,29 +373,30 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         if (amount % volumeStep > 0) {
           amount += volumeStep - (amount % volumeStep);
         };
-        bids[i] := { amount; price };
+        Vec.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.require(rates[i])));
       };
 
       let replace_orders_result = await* auction.replaceOrders(
         Array.tabulate<(Principal, MarketMaker.OrderInfo, MarketMaker.OrderInfo)>(
-          pairs.size(),
-          func(i) = (pairs[i].base.principal, bids[i], { amount = 0; price = 0 }),
+          Vec.size(placements),
+          func(i) = Vec.get(placements, i) |> (_.0.base.principal, _.1, { amount = 0; price = 0 }),
         ),
         null,
       );
 
       switch (replace_orders_result) {
-        case (#Ok results) {
-          for (i in results.keys()) {
-            addHistoryItem(?MarketMaker.sharePair(pairs[i]), ?bids[i], ?rates[i], "OK");
+        case (#Ok _) {
+          for (p in Vec.vals(placements)) {
+            addHistoryItem(?MarketMaker.sharePair(p.0), ?p.1, ?p.2, "OK");
           };
         };
         case (#Err(err)) {
           switch (err) {
             case (#placement(err)) {
-              let pair = ?MarketMaker.sharePair(pairs[err.index]);
-              let bid_order = ?bids[err.index];
-              let rate = ?rates[err.index];
+              let (p, b, r) = Vec.get(placements, err.index);
+              let pair = ?MarketMaker.sharePair(p);
+              let bid_order = ?b;
+              let rate = ?r;
               switch (err.error) {
                 case (#ConflictingOrder(_)) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#ConflictOrderError));
                 case (#UnknownAsset) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#UnknownAssetError));

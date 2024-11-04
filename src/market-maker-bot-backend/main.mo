@@ -310,30 +310,27 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     executionLock := true;
     try {
       let pairs = tradingPairs.getPairs();
-      let ?rates = await* oracle.fetchRates(
+      let rates = await* oracle.fetchRates(
         tradingPairs.quoteInfo().symbol,
         pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
-      ) else {
-        addHistoryItem(null, null, null, null, U.getErrorMessage(#RatesError));
-        executionLock := false;
-        return;
-      };
+      );
       let sessionNumber = await* tradingPairs.replayTransactionHistory(auction);
 
       let pairsToProcess : Vec.Vector<MarketMaker.MarketPair> = Vec.new();
       let ratesToProcess : Vec.Vector<Float> = Vec.new();
       for (i in pairs.keys()) {
         let market_pair = pairs[i];
-        if (market_pair.base_credits == 0 or market_pair.quote_credits == 0) {
-          if (market_pair.base_credits == 0) {
+        if (market_pair.base_credits == 0 or market_pair.quote_credits == 0 or rates[i] == null) {
+          if (rates[i] == null) {
+            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, U.getErrorMessage(#RatesError));
+          } else if (market_pair.base_credits == 0) {
             addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
-          };
-          if (market_pair.quote_credits == 0) {
+          } else if (market_pair.quote_credits == 0) {
             addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
           };
         } else {
           Vec.add(pairsToProcess, market_pair);
-          Vec.add(ratesToProcess, rates[i]);
+          Vec.add(ratesToProcess, U.require(rates[i]));
         };
       };
       let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, sessionNumber);
