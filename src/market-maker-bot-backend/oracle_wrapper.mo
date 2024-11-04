@@ -9,6 +9,7 @@ import Debug "mo:base/Debug";
 import Float "mo:base/Float";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
+import Prim "mo:prim";
 import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
 
@@ -19,7 +20,7 @@ module {
   public class Self(oracle_principal : Principal) {
     let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
 
-    let xrc2 : (
+    let neutriniteOracle : (
       actor {
         get_latest : () -> async [((Nat, Nat), Text, Float)];
       }
@@ -46,11 +47,16 @@ module {
         #ErrorGetRates;
       };
     } {
-      if (base == "TCYCLES") {
-        let results = await xrc2.get_latest();
+      if (base == "TCYCLES" or base == "GLDT") {
+        let key = switch (base) {
+          case ("TCYCLES") "XTC/USD";
+          case ("GLDT") "GLDT/USD";
+          case (_) Prim.trap("Can never happen: unknown token for neutrinite");
+        };
+        let results = await neutriniteOracle.get_latest();
         var rate : Float = 0;
         label l for (x in results.vals()) {
-          if (x.1 == "XTC/USD") {
+          if (x.1 == key) {
             rate := x.2;
             break l;
           };
