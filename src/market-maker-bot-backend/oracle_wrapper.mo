@@ -32,15 +32,21 @@ module {
 
     public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* ?[Float] {
       Debug.print("Fetching rates..");
-      var res = Array.init<Float>(baseSymbols.size(), 0);
+      let calls : [var ?(async { #Ok : Float; #Err : { #ErrorGetRates } })] = Array.init(baseSymbols.size(), null);
       for (i in baseSymbols.keys()) {
-        let ?current_rate = U.upperResultToOption(await* getExchangeRate(baseSymbols[i], quoteSymbol)) else return null;
+        calls[i] := ?(getExchangeRate(baseSymbols[i], quoteSymbol));
+      };
+      var res = Array.init<Float>(baseSymbols.size(), 0);
+      for (i in calls.keys()) {
+        let ?call = calls[i] else return null;
+        let ?current_rate = U.upperResultToOption(await call) else return null;
         res[i] := current_rate;
       };
+      Debug.print("Rates fetched: " # debug_show res);
       ?Array.freeze(res);
     };
 
-    public func getExchangeRate(base : Text, quote : Text) : async* {
+    public func getExchangeRate(base : Text, quote : Text) : async {
       #Ok : Float;
       #Err : {
         #ErrorGetRates;
