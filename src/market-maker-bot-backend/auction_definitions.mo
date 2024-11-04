@@ -27,7 +27,7 @@ module {
         #VolumeStepViolated : { baseVolumeStep : Nat };
       };
     };
-    #UnknownError;
+    #UnknownError : Text;
   };
   public type NotifyResult = {
     #Ok : { credit_inc : Nat; credit : Int; deposit_inc : Nat };
@@ -55,6 +55,7 @@ module {
     price : Float;
     volume : Nat;
   };
+  public type TransactionHistoryItem = (timestamp : Nat64, sessionNumber : Nat, kind : { #ask; #bid }, ledgerPrincipal : Principal, volume : Nat, price : Float);
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
     manageOrders : shared (
@@ -69,12 +70,12 @@ module {
     queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
-    queryBids : query () -> async ([(OrderId, Order, Nat)]);
     icrc84_withdraw : ({
       to : { owner : Principal; subaccount : ?Blob };
       amount : Nat;
       token : Principal;
       expected_fee : ?Nat;
     }) -> async WithdrawResult;
+    queryTransactionHistoryForward : query (token : ?Principal, limit : Nat, skip : Nat) -> async (history : [TransactionHistoryItem], sessionNumber : Nat, auctionInProgress : Bool);
   };
 };

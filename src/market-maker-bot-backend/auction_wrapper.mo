@@ -14,6 +14,8 @@ import Option "mo:base/Option";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
 
+import Vec "mo:vector";
+
 import Auction "./auction_definitions";
 
 module {
@@ -77,30 +79,26 @@ module {
       (map, Option.get(sessionNumber, 0));
     };
 
-    public func replaceOrders(token : Principal, bid : OrderInfo, ask : OrderInfo, sessionNumber : ?Nat) : async* {
+    public func replaceOrders(orders : [(token : Principal, bid : OrderInfo, ask : OrderInfo)], sessionNumber : ?Nat) : async* {
       #Ok : [Nat];
       #Err : Auction.ManageOrdersError;
     } {
-      let placeAsk = ask.amount > 0;
-      let placeBid = Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000;
+      let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
+      let cancellations : Vec.Vector<Principal> = Vec.new();
 
-      let placements : [{
-        #ask : (Principal, Nat, Float);
-        #bid : (Principal, Nat, Float);
-      }] = switch (placeBid, placeAsk) {
-        case (false, false) [];
-        case (false, _) [#ask(token, ask.amount, ask.price)];
-        case (_, false) [#bid(token, bid.amount, bid.price)];
-        case (_) [#bid(token, bid.amount, bid.price), #ask(token, ask.amount, ask.price)];
+      for ((token, bid, ask) in orders.vals()) {
+        Vec.add(cancellations, token);
+        if (ask.amount > 0) {
+          Vec.add(placements, #ask(token, ask.amount, ask.price));
+        };
+        if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
+          Vec.add(placements, #bid(token, bid.amount, bid.price));
+        };
       };
       try {
-        await ac.manageOrders(
-          ?(#all(?[token])), // cancel all orders for tokens
-          placements,
-          sessionNumber,
-        );
-      } catch (_) {
-        #Err(#UnknownError);
+        await ac.manageOrders(?(#all(?Vec.toArray(cancellations))), Vec.toArray(placements), sessionNumber);
+      } catch (err) {
+        #Err(#UnknownError(Error.message(err)));
       };
     };
 
@@ -108,7 +106,7 @@ module {
       #Ok;
       #Err : {
         #CancellationError;
-        #UnknownError;
+        #UnknownError : Text;
       };
     } {
       try {
@@ -122,9 +120,9 @@ module {
           case (#Ok(_)) #Ok;
           case (#Err(_)) #Err(#CancellationError);
         };
-      } catch (e) {
-        Debug.print(Error.message(e));
-        #Err(#UnknownError);
+      } catch (err) {
+        Debug.print(Error.message(err));
+        #Err(#UnknownError(Error.message(err)));
       };
     };
 

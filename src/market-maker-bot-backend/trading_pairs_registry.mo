@@ -6,8 +6,8 @@ import Int "mo:base/Int";
 import List "mo:base/List";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
+import Debug "mo:base/Debug";
 
-import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import MarketMaker "./market_maker";
 import Tokens "./tokens";
@@ -15,12 +15,30 @@ import U "./utils";
 
 module TradingPairsRegistry {
 
-  public type SharedDataV1 = {
+  public type StableDataV2 = {
+    registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
+    quoteReserve : Nat;
+    synchronizedTransactions : Nat;
+  };
+
+  public func defaultStableDataV2() : StableDataV2 = {
+    registry = null;
+    quoteReserve = 0;
+    synchronizedTransactions = 0;
+  };
+
+  public func migrateStableDataV2(data : StableDataV1) : StableDataV2 = {
+    registry = data.registry;
+    quoteReserve = data.quoteReserve;
+    synchronizedTransactions = 0;
+  };
+
+  public type StableDataV1 = {
     registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
     quoteReserve : Nat;
   };
 
-  public func defaultSharedDataV1() : SharedDataV1 = {
+  public func defaultStableDataV1() : StableDataV1 = {
     registry = null;
     quoteReserve = 0;
   };
@@ -31,10 +49,20 @@ module TradingPairsRegistry {
 
     var registry : AssocList.AssocList<Text, MarketMaker.MarketPair> = null;
     var quoteReserve : Nat = 0;
+    // amount of seen transaction history items
+    var synchronizedTransactions : Nat = 0;
 
     public func quoteInfo() : MarketMaker.TokenDescription = U.requireMsg(quote, "Not initialized");
 
     public func getQuoteReserve() : Nat = quoteReserve;
+
+    public func getTotalQuoteCredits() : Nat {
+      var total = getQuoteReserve();
+      for (pair in getPairs().vals()) {
+        total += pair.quote_credits;
+      };
+      total;
+    };
 
     public func nPairs() : Nat = List.size(registry);
 
@@ -50,58 +78,7 @@ module TradingPairsRegistry {
       AssocList.find<Text, MarketMaker.MarketPair>(registry, baseSymbol, Text.equal);
     };
 
-    public func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async* Nat {
-      let ?pair = getPair(baseSymbol) else throw Error.reject("Trading pair not found");
-      var balanceInc : Int = switch (balance) {
-        case (#set x) x - pair.quote_credits;
-        case (#inc x) x;
-        case (#dec x) Int.max(-pair.quote_credits, -x);
-      };
-      if (balanceInc > 0 and quoteReserve < balanceInc) {
-        throw Error.reject("Insufficient quote token balance");
-      };
-      pair.quote_credits := Int.abs(pair.quote_credits + balanceInc);
-      quoteReserve := Int.abs(quoteReserve - balanceInc);
-      pair.quote_credits;
-    };
-
-    public func refreshCredits(auction : AuctionWrapper.Self) : async* Nat {
-      // pull pure credits from the auction
-      let (credits, sessionNumber) = await* auction.getCredits();
-      let activeBids = await auction.getAuction().queryBids();
-      // update buckets if any of already placed bids were fulfilled
-      for ((_, pair) in List.toIter(registry)) {
-        let activeBid = Array.find<(Any, Auction.Order, Nat)>(activeBids, func((_, { icrc1Ledger }, _)) = Principal.equal(icrc1Ledger, pair.base.principal));
-        let lockedQuote = switch (activeBid) {
-          case (null) 0;
-          case (?(_, bid, sn)) {
-            assert sn == sessionNumber;
-            (bid.price * Float.fromInt(bid.volume) |> Int.abs(Float.toInt(Float.ceil(_))));
-          };
-        };
-        if (lockedQuote != pair.locked_quote_credits) {
-          pair.quote_credits := Int.abs(pair.quote_credits + lockedQuote - pair.locked_quote_credits);
-          pair.locked_quote_credits := lockedQuote;
-        };
-      };
-      // calculate quote credits reserve, update values in the registry
-      var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
-      for ((_, pair) in List.toIter(registry)) {
-        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base.principal, Principal.equal, 0);
-        if (pair.quote_credits > 0) {
-          if (quoteFreeCredits <= pair.quote_credits) {
-            pair.quote_credits := quoteFreeCredits;
-            quoteFreeCredits := 0;
-          } else {
-            quoteFreeCredits -= pair.quote_credits;
-          };
-        };
-      };
-      quoteReserve := quoteFreeCredits;
-      sessionNumber;
-    };
-
-    public func refreshTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
+    public func initTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       let tokens_info = Tokens.getTokensInfo();
@@ -117,7 +94,7 @@ module TradingPairsRegistry {
           switch (AssocList.find(tokens_info, token, Principal.equal)) {
             case (?_) {
               let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.equal, "Error get base token info");
-              let pair = {
+              let pair : MarketMaker.MarketPair = {
                 base = {
                   principal = token;
                   symbol = base_token_info.symbol;
@@ -125,7 +102,6 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var locked_quote_credits = 0;
                 var spread_value = default_spread_value;
               };
 
@@ -147,13 +123,113 @@ module TradingPairsRegistry {
       (quote_token, supported_tokens);
     };
 
-    public func share() : SharedDataV1 {
-      { registry; quoteReserve };
+    public func setQuoteBalance(auction : AuctionWrapper.Self, baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async* Nat {
+      let ?pair = getPair(baseSymbol) else throw Error.reject("Trading pair not found");
+      var balanceInc : Int = switch (balance) {
+        case (#set x) {
+          ignore await* replayTransactionHistory(auction);
+          x - pair.quote_credits;
+        };
+        case (#inc x) x;
+        case (#dec x) Int.max(-pair.quote_credits, -x);
+      };
+      if (balanceInc > 0 and quoteReserve < balanceInc) {
+        throw Error.reject("Insufficient quote token balance");
+      };
+      pair.quote_credits := Int.abs(pair.quote_credits + balanceInc);
+      quoteReserve := Int.abs(quoteReserve - balanceInc);
+      pair.quote_credits;
     };
 
-    public func unshare(data : SharedDataV1) {
+    var replayTransactionHistoryLock : Bool = false;
+
+    // replay transaction history to update quote token buckets. Returns current session number
+    public func replayTransactionHistory(auction : AuctionWrapper.Self) : async* Nat {
+      assert not replayTransactionHistoryLock;
+      replayTransactionHistoryLock := true;
+
+      try {
+        let pairs : [(Text, MarketMaker.MarketPair)] = List.toArray(registry);
+        let basePrincipals = Array.map<(Text, MarketMaker.MarketPair), Principal>(pairs, func(_, x) = x.base.principal);
+        let quoteBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
+        let baseBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
+
+        var processedTransactions = synchronizedTransactions;
+        var sessionNumber : Nat = 0;
+        let chunkSize : Nat = 500;
+        label l while (true) {
+          Debug.print("Replaying transactions history from " # debug_show processedTransactions # "...");
+          let (historyChunk, sn, auctionInProgress) = await auction.getAuction().queryTransactionHistoryForward(null, chunkSize, processedTransactions);
+          sessionNumber := sn;
+          for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
+            switch (Array.indexOf<Principal>(token, basePrincipals, Principal.equal)) {
+              case (null) {};
+              case (?tokenIdx) {
+                switch (kind) {
+                  case (#bid) {
+                    quoteBalances[tokenIdx] -= (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.ceil(_))));
+                    baseBalances[tokenIdx] += volume;
+                  };
+                  case (#ask) {
+                    quoteBalances[tokenIdx] += (price * Float.fromInt(volume) |> Int.abs(Float.toInt(Float.floor(_))));
+                    baseBalances[tokenIdx] -= volume;
+                  };
+                };
+              };
+            };
+          };
+          processedTransactions += historyChunk.size();
+          if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
+        };
+        Debug.print("Transactions history replayed (" # debug_show (processedTransactions - synchronizedTransactions : Nat) # " items). Applying credits..");
+        for ((_, pair) in List.toIter(registry)) {
+          switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
+            case (null) {};
+            case (?tokenIdx) {
+              pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
+              pair.quote_credits := Int.max(quoteBalances[tokenIdx], 0) |> Int.abs(_);
+              // if removed more than available in bucket - decrement from quote reserve
+              if (quoteBalances[tokenIdx] < 0) {
+                quoteReserve := Int.max(quoteReserve + quoteBalances[tokenIdx], 0) |> Int.abs(_);
+              };
+            };
+          };
+        };
+        synchronizedTransactions := processedTransactions;
+        sessionNumber;
+      } finally {
+        replayTransactionHistoryLock := false;
+      };
+    };
+
+    // pulls credits from the auction
+    public func refreshCredits(auction : AuctionWrapper.Self) : async* Nat {
+      let (credits, sessionNumber) = await* auction.getCredits();
+      // calculate quote credits reserve, update values in the registry
+      var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
+      for ((_, pair) in List.toIter(registry)) {
+        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base.principal, Principal.equal, 0);
+        if (pair.quote_credits > 0) {
+          if (quoteFreeCredits <= pair.quote_credits) {
+            pair.quote_credits := quoteFreeCredits;
+            quoteFreeCredits := 0;
+          } else {
+            quoteFreeCredits -= pair.quote_credits;
+          };
+        };
+      };
+      quoteReserve := quoteFreeCredits;
+      sessionNumber;
+    };
+
+    public func share() : StableDataV2 {
+      { registry; quoteReserve; synchronizedTransactions };
+    };
+
+    public func unshare(data : StableDataV2) {
       registry := data.registry;
       quoteReserve := data.quoteReserve;
+      synchronizedTransactions := data.synchronizedTransactions;
     };
 
   };

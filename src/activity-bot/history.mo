@@ -14,31 +14,34 @@ import MarketMakerModule "../market-maker-bot-backend/market_maker";
 module HistoryModule {
   public type HistoryItemType = {
     timestamp : Time.Time;
-    pair : MarketMakerModule.MarketPairShared;
+    pair : ?MarketMakerModule.MarketPairShared;
     bidOrder : ?MarketMakerModule.OrderInfo;
     rate : ?Float;
     message : Text;
   };
 
   public func new(
-    pair : MarketMakerModule.MarketPair,
+    pair : ?MarketMakerModule.MarketPairShared,
     bidOrder : ?MarketMakerModule.OrderInfo,
     rate : ?Float,
     message : Text,
   ) : HistoryItemType = ({
     timestamp = Time.now();
-    pair = MarketMakerModule.sharePair(pair);
+    pair;
     bidOrder;
     rate;
     message;
   });
 
-  public func getText(item : HistoryItemType) : (Text) {
+  public func getText(item : HistoryItemType) : Text {
     Text.join(
       "",
       [
         Int.toText(item.timestamp) # ":  ",
-        item.pair.base.symbol # " ",
+        switch (item.pair) {
+          case (?_pair) _pair.base.symbol # " ";
+          case (null) "- ";
+        },
         switch (item.rate) {
           case (?_rate) "RATE " # Float.toText(_rate) # ", ";
           case (null) "";

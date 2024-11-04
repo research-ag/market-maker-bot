@@ -14,7 +14,7 @@ import MarketMakerModule "./market_maker";
 module HistoryModule {
   public type HistoryItemType = {
     timestamp : Time.Time;
-    pair : MarketMakerModule.MarketPairShared;
+    pair : ?MarketMakerModule.MarketPairShared;
     bidOrder : ?MarketMakerModule.OrderInfo;
     askOrder : ?MarketMakerModule.OrderInfo;
     rate : ?Float;
@@ -22,14 +22,14 @@ module HistoryModule {
   };
 
   public func new(
-    pair : MarketMakerModule.MarketPair,
+    pair : ?MarketMakerModule.MarketPairShared,
     bidOrder : ?MarketMakerModule.OrderInfo,
     askOrder : ?MarketMakerModule.OrderInfo,
     rate : ?Float,
     message : Text,
   ) : HistoryItemType = ({
     timestamp = Time.now();
-    pair = MarketMakerModule.sharePair(pair);
+    pair;
     bidOrder;
     askOrder;
     rate;
@@ -41,7 +41,10 @@ module HistoryModule {
       "",
       [
         Int.toText(item.timestamp) # ":  ",
-        item.pair.base.symbol # " ",
+        switch (item.pair) {
+          case (?_pair) _pair.base.symbol # " ";
+          case (null) "- ";
+        },
         switch (item.rate) {
           case (?_rate) "RATE " # Float.toText(_rate) # ", ";
           case (null) "";

@@ -6,12 +6,15 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
+import Array "mo:base/Array";
 import Float "mo:base/Float";
 import Principal "mo:base/Principal";
 import Int "mo:base/Int";
 import Nat32 "mo:base/Nat32";
 import Int32 "mo:base/Int32";
-import OracleWrapper "./oracle_wrapper";
+
+import Vec "mo:vector";
+
 import AuctionWrapper "./auction_wrapper";
 import U "./utils";
 
@@ -21,7 +24,7 @@ module MarketMaker {
     ask_price : Float;
   };
 
-  type ValumesInfo = {
+  type VolumesInfo = {
     bid_volume : Nat;
     ask_volume : Nat;
   };
@@ -46,7 +49,6 @@ module MarketMaker {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
-    locked_quote_credits : Nat;
     spread_value : Float;
   };
 
@@ -56,8 +58,6 @@ module MarketMaker {
     var base_credits : Nat;
     // total quote token credits assigned to this pair: available + locked by currently placed bid
     var quote_credits : Nat;
-    // currently locked quote token credits, assigned to this pair
-    var locked_quote_credits : Nat;
     var spread_value : Float;
   };
 
@@ -74,7 +74,6 @@ module MarketMaker {
       pair with
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
-      locked_quote_credits = pair.locked_quote_credits;
       spread_value = pair.spread_value;
     };
   };
@@ -96,7 +95,7 @@ module MarketMaker {
     Int.abs(10 ** Float.toInt(zf));
   };
 
-  func getVolumes(credits : CreditsInfo, prices : PricesInfo) : ValumesInfo {
+  func getVolumes(credits : CreditsInfo, prices : PricesInfo) : VolumesInfo {
     let volume_step = calculateVolumeStep(prices.bid_price);
     let truncToStep : Nat -> Nat = func(x) = x - x % volume_step;
     let bid_volume : Nat = Int.abs((Float.toInt(Float.fromInt(credits.quote_credit) / prices.bid_price)));
@@ -108,66 +107,71 @@ module MarketMaker {
 
   public func execute(
     quote : TokenDescription,
-    pair : MarketPair,
-    xrc : OracleWrapper.Self,
+    pairs : [MarketPair],
+    rates : [Float],
     ac : AuctionWrapper.Self,
-    sessionNumber : ?Nat,
+    sessionNumber : Nat,
   ) : async* {
-    #Ok : (OrderInfo, OrderInfo, Float);
-    #Err : (U.ExecutionError, ?OrderInfo, ?OrderInfo, ?Float);
+    #Ok : [(OrderInfo, OrderInfo, Float)];
+    #Err : (U.ExecutionError, ?MarketPairShared, ?OrderInfo, ?OrderInfo, ?Float);
   } {
-    let current_rate_result = await* xrc.getExchangeRate(pair.base.symbol, quote.symbol);
+    let replaceArgs : Vec.Vector<(token : Principal, bid : OrderInfo, ask : OrderInfo)> = Vec.new();
 
-    // calculate multiplicator which help to normalize the price before create
-    // the order to the smallest units of the tokens
-    let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
+    for (i in pairs.keys()) {
+      let pair = pairs[i];
+      // calculate multiplicator which help to normalize the price before create
+      // the order to the smallest units of the tokens
+      let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
-    switch (current_rate_result) {
-      case (#Ok(current_rate)) {
-        let { bid_price; ask_price } = getPrices(pair.spread_value, current_rate, price_decimals_multiplicator);
-        let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
+      let { bid_price; ask_price } = getPrices(pair.spread_value, rates[i], price_decimals_multiplicator);
+      let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
 
-        let bid_order : OrderInfo = {
-          amount = bid_volume;
-          price = bid_price;
-        };
-        let ask_order : OrderInfo = {
-          amount = ask_volume;
-          price = ask_price;
-        };
+      Vec.add(
+        replaceArgs,
+        (
+          pair.base.principal,
+          {
+            amount = bid_volume;
+            price = bid_price;
+          },
+          {
+            amount = ask_volume;
+            price = ask_price;
+          },
+        ),
+      );
+    };
 
-        let replace_orders_result = await* ac.replaceOrders(pair.base.principal, bid_order, ask_order, sessionNumber);
+    let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?sessionNumber);
 
-        switch (replace_orders_result) {
-          case (#Ok _) {
-            pair.locked_quote_credits := (bid_order.price * Float.fromInt(bid_order.amount) |> Int.abs(Float.toInt(Float.ceil(_))));
-            #Ok(bid_order, ask_order, current_rate);
-          };
-          case (#Err(err)) {
-            switch (err) {
-              case (#placement(err)) {
-                switch (err.error) {
-                  case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?bid_order, ?ask_order, ?current_rate);
-                  case (#UnknownAsset) #Err(#UnknownAssetError, ?bid_order, ?ask_order, ?current_rate);
-                  case (#NoCredit) #Err(#NoCreditError, ?bid_order, ?ask_order, ?current_rate);
-                  case (#TooLowOrder) #Err(#TooLowOrderError, ?bid_order, ?ask_order, ?current_rate);
-                  case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?bid_order, ?ask_order, ?current_rate);
-                  case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?bid_order, ?ask_order, ?current_rate);
-                };
-              };
-              case (#cancellation(err)) {
-                #Err(#CancellationError, ?bid_order, ?ask_order, ?current_rate);
-              };
-              case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), ?bid_order, ?ask_order, ?current_rate);
-              case (#UnknownPrincipal) #Err(#UnknownPrincipal, ?bid_order, ?ask_order, ?current_rate);
-              case (#UnknownError) #Err(#UnknownError, ?bid_order, ?ask_order, ?current_rate);
-            };
-          };
-        };
+    switch (replace_orders_result) {
+      case (#Ok _) {
+        Array.tabulate<(OrderInfo, OrderInfo, Float)>(
+          pairs.size(),
+          func(i) = (Vec.get(replaceArgs, i).1, Vec.get(replaceArgs, i).2, rates[i]),
+        ) |> #Ok(_);
       };
       case (#Err(err)) {
         switch (err) {
-          case (#ErrorGetRates) #Err(#RatesError, null, null, null);
+          case (#placement(err)) {
+            let pair = sharePair(pairs[err.index]);
+            let (_, bid_order, ask_order) = Vec.get(replaceArgs, err.index);
+            let current_rate = rates[err.index];
+            switch (err.error) {
+              case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?pair, ?bid_order, ?ask_order, ?current_rate);
+              case (#UnknownAsset) #Err(#UnknownAssetError, ?pair, ?bid_order, ?ask_order, ?current_rate);
+              case (#NoCredit) #Err(#NoCreditError, ?pair, ?bid_order, ?ask_order, ?current_rate);
+              case (#TooLowOrder) #Err(#TooLowOrderError, ?pair, ?bid_order, ?ask_order, ?current_rate);
+              case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?pair, ?bid_order, ?ask_order, ?current_rate);
+              case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?pair, ?bid_order, ?ask_order, ?current_rate);
+            };
+          };
+          case (#cancellation(err)) {
+            #Err(#CancellationError, null, null, null, null);
+          };
+          case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), null, null, null, null);
+          case (#UnknownPrincipal) #Err(#UnknownPrincipal, null, null, null, null);
+          case (#UnknownError x) #Err(#UnknownError(x), null, null, null, null);
         };
       };
     };

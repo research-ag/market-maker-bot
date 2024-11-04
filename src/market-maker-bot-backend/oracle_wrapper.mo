@@ -4,12 +4,16 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
+import Array "mo:base/Array";
+import Debug "mo:base/Debug";
 import Float "mo:base/Float";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
 import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
+
 import OracleDefinitions "./oracle_definitions";
+import U "./utils";
 
 module {
   public class Self(oracle_principal : Principal) {
@@ -24,6 +28,16 @@ module {
     func calculateRate(rate : Nat64, decimals : Nat32) : Float {
       let exponent : Float = Float.fromInt(Nat32.toNat(decimals));
       Float.fromInt(Nat64.toNat(rate)) / Float.pow(10, exponent);
+    };
+
+    public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* ?[Float] {
+      Debug.print("Fetching rates..");
+      var res = Array.init<Float>(baseSymbols.size(), 0);
+      for (i in baseSymbols.keys()) {
+        let ?current_rate = U.upperResultToOption(await* getExchangeRate(baseSymbols[i], quoteSymbol)) else return null;
+        res[i] := current_rate;
+      };
+      ?Array.freeze(res);
     };
 
     public func getExchangeRate(base : Text, quote : Text) : async* {
