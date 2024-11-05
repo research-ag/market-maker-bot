@@ -24,7 +24,6 @@ export const PairsTable = () => {
       <Table>
         <colgroup>
           <col style={{width: '200px'}}/>
-          <col style={{width: '200px'}}/>
           <col style={{width: '110px'}}/>
           <col style={{width: '110px'}}/>
           <col style={{width: '110px'}}/>
@@ -32,7 +31,6 @@ export const PairsTable = () => {
         <thead>
         <tr>
           <th>Base Token</th>
-          <th>Quote Token</th>
           <th>Spread</th>
           <th>Quote balance</th>
           <th>Base balance</th>
@@ -53,11 +51,6 @@ export const PairsTable = () => {
                   <InfoItem content={pair.base.symbol} withCopy={true}/>
                   <InfoItem content={pair.base.principal.toText()} withCopy={true}/>
                   <InfoItem content={`Decimals ${pair.base.decimals}`}/>
-                </td>
-                <td>
-                  <InfoItem content={quoteInfo?.symbol || '-'} withCopy={true}/>
-                  <InfoItem content={quoteInfo?.principal.toText() || '-'} withCopy={true}/>
-                  <InfoItem content={`Decimals ${quoteInfo?.decimals || '-'}`}/>
                 </td>
                 <td>
                   <InfoItem content={'' + pair.spread_value} withEdit={true} onEdit={() => {
