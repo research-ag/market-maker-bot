@@ -31,17 +31,26 @@ module {
       Float.fromInt(Nat64.toNat(rate)) / Float.pow(10, exponent);
     };
 
-    public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* ?[Float] {
+    public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* [?Float] {
       Debug.print("Fetching rates..");
-      var res = Array.init<Float>(baseSymbols.size(), 0);
+      let calls : [var ?(async { #Ok : Float; #Err : { #ErrorGetRates } })] = Array.init(baseSymbols.size(), null);
       for (i in baseSymbols.keys()) {
-        let ?current_rate = U.upperResultToOption(await* getExchangeRate(baseSymbols[i], quoteSymbol)) else return null;
-        res[i] := current_rate;
+        try {
+          calls[i] := ?(getExchangeRate(baseSymbols[i], quoteSymbol));
+        } catch (_) {};
       };
-      ?Array.freeze(res);
+      var res = Array.init<?Float>(baseSymbols.size(), null);
+      label L for (i in calls.keys()) {
+        let ?call = calls[i] else continue L;
+        try {
+          res[i] := U.upperResultToOption(await call);
+        } catch (_) {};
+      };
+      Debug.print("Rates fetched: " # debug_show res);
+      Array.freeze(res);
     };
 
-    public func getExchangeRate(base : Text, quote : Text) : async* {
+    public func getExchangeRate(base : Text, quote : Text) : async {
       #Ok : Float;
       #Err : {
         #ErrorGetRates;
