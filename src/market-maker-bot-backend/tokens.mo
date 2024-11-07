@@ -23,7 +23,7 @@ module {
       (Principal.fromText("mxzaz-hqaaa-aaaar-qaada-cai"), { symbol = "BTC"; decimals = 8 }),
       (Principal.fromText("ss2fx-dyaaa-aaaar-qacoq-cai"), { symbol = "ETH"; decimals = 18 }),
       (Principal.fromText("um5iw-rqaaa-aaaaq-qaaba-cai"), { symbol = "TCYCLES"; decimals = 12 }),
-      (Principal.fromText("oh54a-baaaa-aaaap-abryq-cai"), { symbol = "GLDT"; decimals = 8 }),
+      (Principal.fromText("6c7su-kiaaa-aaaar-qaira-cai"), { symbol = "GLDT"; decimals = 8 }),
     ];
 
     List.fromArray(symbolsArray);
