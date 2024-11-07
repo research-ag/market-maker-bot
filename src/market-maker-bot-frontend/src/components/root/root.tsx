@@ -27,7 +27,9 @@ const Root = () => {
             <InfoItem label="Bot principal" content={canisterId} withCopy />
             <InfoItem label="Initialized" content={botState?.initializing ? 'in progress' : (botState?.initialized ? 'true' : 'false')} />
             <InfoItem label="Timer interval" content={botState?.timer_interval ? `${botState?.timer_interval.toString()} seconds` :  '0 seconds'} />
-            <InfoItem label="Quote token principal" content={botState?.quote_token && botState?.quote_token.length ? botState?.quote_token[0].toString() : ''} />
+            <InfoItem label="Quote symbol" content={quoteInfo?.symbol || '-'} withCopy={true}/>
+            <InfoItem label="Quote principal" content={quoteInfo?.principal.toText() || '-'} withCopy={true}/>
+            <InfoItem label="Quote decimals" content={'' + (quoteInfo?.decimals || '-')}/>
             <InfoItem label="Quote reserve"
                       content={'' + (Number(quoteReserve) / Math.pow(10, quoteInfo?.decimals || 0))}/>
             <ToggleBotButton isRunning = {!!botState?.running} isFetching = {isFetching} currentTimer = {botState?.timer_interval ?? 0n}/>
