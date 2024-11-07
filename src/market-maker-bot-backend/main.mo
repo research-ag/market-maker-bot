@@ -320,9 +320,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       let ratesToProcess : Vec.Vector<Float> = Vec.new();
       for (i in pairs.keys()) {
         let market_pair = pairs[i];
-        if (market_pair.base_credits == 0 or market_pair.quote_credits == 0 or rates[i] == null) {
-          if (rates[i] == null) {
-            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, U.getErrorMessage(#RatesError));
+        if (market_pair.base_credits == 0 or market_pair.quote_credits == 0 or U.upperResultToOption(rates[i]) == null) {
+          if (U.upperResultToOption(rates[i]) == null) {
+            switch (rates[i]) {
+              case (#Ok _) {};
+              case (#Err(#ErrorGetRates(x))) addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, U.getErrorMessage(#RatesError(x)));
+            };
           } else if (market_pair.base_credits == 0) {
             addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
           } else if (market_pair.quote_credits == 0) {
@@ -330,7 +333,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
           };
         } else {
           Vec.add(pairsToProcess, market_pair);
-          Vec.add(ratesToProcess, U.require(rates[i]));
+          Vec.add(ratesToProcess, U.requireUpperOk(rates[i]));
         };
       };
       let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, sessionNumber);

@@ -6,6 +6,7 @@
 
 import Array "mo:base/Array";
 import Debug "mo:base/Debug";
+import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
@@ -14,7 +15,6 @@ import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
 
 import OracleDefinitions "./oracle_definitions";
-import U "./utils";
 
 module {
   public class Self(oracle_principal : Principal) {
@@ -31,20 +31,27 @@ module {
       Float.fromInt(Nat64.toNat(rate)) / Float.pow(10, exponent);
     };
 
-    public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* [?Float] {
+    public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* [{
+      #Ok : Float;
+      #Err : { #ErrorGetRates : Text };
+    }] {
       Debug.print("Fetching rates..");
-      let calls : [var ?(async { #Ok : Float; #Err : { #ErrorGetRates } })] = Array.init(baseSymbols.size(), null);
+      let calls : [var ?(async { #Ok : Float; #Err : { #ErrorGetRates : Text } })] = Array.init(baseSymbols.size(), null);
       for (i in baseSymbols.keys()) {
         try {
           calls[i] := ?(getExchangeRate(baseSymbols[i], quoteSymbol));
-        } catch (_) {};
+        } catch (err) {
+          calls[i] := ?(async #Err(#ErrorGetRates(Error.message(err))));
+        };
       };
-      var res = Array.init<?Float>(baseSymbols.size(), null);
+      var res = Array.init<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(baseSymbols.size(), #Err(#ErrorGetRates("Empty result")));
       label L for (i in calls.keys()) {
         let ?call = calls[i] else continue L;
-        try {
-          res[i] := U.upperResultToOption(await call);
-        } catch (_) {};
+        res[i] := try {
+          await call;
+        } catch (err) {
+          #Err(#ErrorGetRates(Error.message(err)));
+        };
       };
       Debug.print("Rates fetched: " # debug_show res);
       Array.freeze(res);
@@ -53,7 +60,7 @@ module {
     public func getExchangeRate(base : Text, quote : Text) : async {
       #Ok : Float;
       #Err : {
-        #ErrorGetRates;
+        #ErrorGetRates : Text;
       };
     } {
       if (base == "TCYCLES" or base == "GLDT") {
@@ -71,7 +78,7 @@ module {
           };
         };
         if (rate == 0) {
-          #Err(#ErrorGetRates);
+          #Err(#ErrorGetRates("Neutrinite oracle did not provide key " # key));
         } else {
           #Ok(rate);
         };
@@ -98,9 +105,28 @@ module {
           case (#Ok(success)) {
             #Ok(calculateRate(success.rate, success.metadata.decimals));
           };
-          case (#Err(_)) {
-            #Err(#ErrorGetRates);
-          };
+          case (#Err(err)) #Err(
+            #ErrorGetRates(
+              switch (err) {
+                case (#AnonymousPrincipalNotAllowed) "#AnonymousPrincipalNotAllowed";
+                case (#CryptoQuoteAssetNotFound) "#CryptoQuoteAssetNotFound";
+                case (#FailedToAcceptCycles) "#FailedToAcceptCycles";
+                case (#ForexBaseAssetNotFound) "#ForexBaseAssetNotFound";
+                case (#CryptoBaseAssetNotFound) "#CryptoBaseAssetNotFound";
+                case (#StablecoinRateTooFewRates) "#StablecoinRateTooFewRates";
+                case (#ForexAssetsNotFound) "#ForexAssetsNotFound";
+                case (#InconsistentRatesReceived) "#InconsistentRatesReceived";
+                case (#RateLimited) "#RateLimited";
+                case (#StablecoinRateZeroRate) "#StablecoinRateZeroRate";
+                case (#Other { code; description }) "#Other: " # description # " (code " #debug_show code # ")";
+                case (#ForexInvalidTimestamp) "#ForexInvalidTimestamp";
+                case (#NotEnoughCycles) "#NotEnoughCycles";
+                case (#ForexQuoteAssetNotFound) "#ForexQuoteAssetNotFound";
+                case (#StablecoinRateNotFound) "#StablecoinRateNotFound";
+                case (#Pending) "#Pending";
+              }
+            )
+          );
         };
       };
     };
