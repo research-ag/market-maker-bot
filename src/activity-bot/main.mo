@@ -351,16 +351,19 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       label L for (i in pairs.keys()) {
         let pair = pairs[i];
 
-        if (rates[i] == null) {
-          addHistoryItem(?MarketMaker.sharePair(pair), null, null, U.getErrorMessage(#RatesError));
-          continue L;
+        switch (rates[i]) {
+          case (#Ok _) {};
+          case (#Err(#ErrorGetRates(x))) {
+            addHistoryItem(?MarketMaker.sharePair(pair), null, null, U.getErrorMessage(#RatesError(x)));
+            continue L;
+          };
         };
 
         // calculate multiplicator which help to normalize the price before create
         // the order to the smallest units of the tokens
         let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote_token.decimals) - Int32.fromNat32(pair.base.decimals);
         // get ask price, because in activity bot we want to place higher bid values
-        let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, U.require(rates[i]), price_decimals_multiplicator);
+        let { ask_price = price } = MarketMaker.getPrices(pair.spread_value, U.requireUpperOk(rates[i]), price_decimals_multiplicator);
         // bid minimum volume
         func getBaseVolumeStep(price : Float) : Nat {
           let p = price / Float.fromInt(1000);
@@ -373,7 +376,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         if (amount % volumeStep > 0) {
           amount += volumeStep - (amount % volumeStep);
         };
-        Vec.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.require(rates[i])));
+        Vec.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.requireUpperOk(rates[i])));
       };
 
       let replace_orders_result = await* auction.replaceOrders(

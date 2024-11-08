@@ -16,7 +16,7 @@ module {
     #CancellationError;
     #UnknownPrincipal;
     #UnknownError : Text;
-    #RatesError;
+    #RatesError : Text;
     #ConflictOrderError;
     #UnknownAssetError;
     #NoCreditError;
@@ -32,7 +32,7 @@ module {
       case (#CancellationError) "Cancellation order error";
       case (#UnknownPrincipal) "Unknown principal error";
       case (#UnknownError x) "Unknown error: " # x;
-      case (#RatesError) "No rates error";
+      case (#RatesError x) "No rates error: " # x;
       case (#ConflictOrderError) "Conflict order error";
       case (#UnknownAssetError) "Unknown asset error";
       case (#NoCreditError) "No credit error";
@@ -61,6 +61,8 @@ module {
       case (null) Prim.trap(message);
     };
   };
+
+  public func requireUpperOk<R, E>(r : { #Ok : R; #Err : E }) : R = require(upperResultToOption(r));
 
   public func upperResultToOption<R, E>(r : { #Ok : R; #Err : E }) : ?R {
     switch r {
