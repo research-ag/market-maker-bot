@@ -36,21 +36,25 @@ module {
       #Err : { #ErrorGetRates : Text };
     }] {
       Debug.print("Fetching rates..");
-      let calls : [var ?(async { #Ok : Float; #Err : { #ErrorGetRates : Text } })] = Array.init(baseSymbols.size(), null);
+      let calls : [var { #Ok : async { #Ok : Float; #Err : { #ErrorGetRates : Text } }; #Err : Text }] = Array.init(baseSymbols.size(), #Err("N/A"));
       for (i in baseSymbols.keys()) {
         try {
-          calls[i] := ?(getExchangeRate(baseSymbols[i], quoteSymbol));
+          calls[i] := #Ok(getExchangeRate(baseSymbols[i], quoteSymbol));
         } catch (err) {
-          calls[i] := ?(async #Err(#ErrorGetRates(Error.message(err))));
+          calls[i] := #Err("Schedule call error: " # Error.message(err));
         };
       };
-      var res = Array.init<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(baseSymbols.size(), #Err(#ErrorGetRates("Empty result")));
+      var res = Array.init<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(baseSymbols.size(), #Err(#ErrorGetRates("N/A")));
       label L for (i in calls.keys()) {
-        let ?call = calls[i] else continue L;
-        res[i] := try {
-          await call;
-        } catch (err) {
-          #Err(#ErrorGetRates(Error.message(err)));
+        res[i] := switch (calls[i]) {
+          case (#Ok call) {
+            try {
+              await call;
+            } catch (err) {
+              #Err(#ErrorGetRates("Call error: " # Error.message(err)));
+            };
+          };
+          case (#Err msg) #Err(#ErrorGetRates(msg));
         };
       };
       Debug.print("Rates fetched: " # debug_show res);
