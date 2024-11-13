@@ -162,7 +162,8 @@ module {
             };
           };
           let ?v = Nat.fromText(valueStr) else return #Err(#ErrorGetRates("Cannot parse Metal Price API response: " # raw.body));
-          #Ok(Float.fromInt(v) / 10 ** Float.fromInt(decimals));
+          let rate = (Float.fromInt(v) / 10 ** Float.fromInt(decimals)) / 3110.35;
+          #Ok(rate);
         } catch (err) {
           #Err(#ErrorGetRates("Metal Price API error: " # Error.message(err)));
         };
