@@ -19,6 +19,7 @@ import Vec "mo:vector";
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
 import HTTP "../market-maker-bot-backend/http";
+import HttpAgent "../market-maker-bot-backend/http_agent";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import TPR "../market-maker-bot-backend/trading_pairs_registry";
@@ -41,9 +42,17 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
   stable let history : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
 
+  var httpAgent : ?HttpAgent.HttpAgent = null;
+  public query func http_transform(raw : HttpAgent.TransformArgs) : async HttpAgent.HttpResponsePayload = async U.require(httpAgent).transform(raw);
+  httpAgent := ?HttpAgent.HttpAgent(
+    http_transform,
+    [("USDXAU_rate", OracleWrapper.transform_metal_price_api_response)],
+    null,
+  );
+
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
-  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
+  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal, U.require(httpAgent));
   let default_spread_value : Float = 0.1;
 
   var bot_timer : Timer.TimerId = 0;

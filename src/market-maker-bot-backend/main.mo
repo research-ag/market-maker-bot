@@ -15,11 +15,8 @@ import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
-import Nat64 "mo:base/Nat64";
 import Principal "mo:base/Principal";
-import R "mo:base/Result";
 import Text "mo:base/Text";
-import Time "mo:base/Time";
 import Timer "mo:base/Timer";
 
 import PT "mo:promtracker";
@@ -45,75 +42,17 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   stable let historyV2 : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
 
-  stable var httpCache : HttpAgent.HttpCache = null;
   var httpAgent : ?HttpAgent.HttpAgent = null;
   public query func http_transform(raw : HttpAgent.TransformArgs) : async HttpAgent.HttpResponsePayload = async U.require(httpAgent).transform(raw);
   httpAgent := ?HttpAgent.HttpAgent(
     http_transform,
-    [(
-      "binance_klines_closing_price",
-      func(raw) {
-        let fallbackResponse = {
-          status = raw.status;
-          body = raw.body;
-          headers = [];
-        };
-        switch (raw.status) {
-          case (200) {
-            let ?json = Text.decodeUtf8(Blob.fromArray(raw.body)) else return fallbackResponse;
-            if (not Text.startsWith(json, #text("[["))) {
-              return fallbackResponse;
-            };
-            // skip 4 first numbers (Kline open time, Open price, High price, Low price)
-            var skipCommas = 4;
-            let chars = json.chars();
-            while (skipCommas > 0) {
-              switch (chars.next()) {
-                case (null) return fallbackResponse;
-                case (?',') skipCommas -= 1;
-                case (_) {};
-              };
-            };
-            // value starts (with quotes)
-            if (chars.next() != ?'\"') {
-              return fallbackResponse;
-            };
-            // read value
-            var valueStr = "";
-            var decimals : Int = 0;
-            var decimalFlag = false;
-            label L while (true) {
-              switch (chars.next()) {
-                case (null) return fallbackResponse;
-                case (?'\"') break L;
-                case (?'.') decimalFlag := true;
-                case (?x) {
-                  valueStr := valueStr # Text.fromChar(x);
-                  if (decimalFlag) {
-                    decimals += 1;
-                  };
-                };
-              };
-            };
-            // parse value as float
-            let ?v = Nat.fromText(valueStr) else return fallbackResponse;
-            let value : Float = Float.fromInt(v) / 10 ** Float.fromInt(decimals);
-            {
-              status = raw.status;
-              body = value |> Float.toText(_) |> Text.encodeUtf8(_) |> Blob.toArray(_);
-              headers = [];
-            };
-          };
-          case (_) fallbackResponse;
-        };
-      },
-    )],
-    httpCache,
+    [("USDXAU_rate", OracleWrapper.transform_metal_price_api_response)],
+    null,
   );
 
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
-  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
+  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal, U.require(httpAgent));
   let default_spread_value : Float = 0.05;
 
   var bot_timer : Timer.TimerId = 0;
@@ -196,35 +135,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func test_outgoing_http() : async R.Result<Text, Text> {
-    let hour = 3_600_000_000_000;
-    let now = Int.abs(Time.now());
-    let start_timestamp : Nat = (now - (now % hour)) / 1_000_000; // beginning of current hour in ms
-    let resp = await* U.require(httpAgent).simpleGetWithCache(
-      hour,
-      (
-        "api.binance.com",
-        "/api/v3/klines?symbol=PAXGUSDT&interval=1h&startTime=" # Nat.toText(start_timestamp),
-        [
-          { name = "accept"; value = "application/json" },
-        ],
-        ?"binance_klines_closing_price",
-      ),
-    );
-    switch (resp) {
-      case (#ok r) #ok(r.body);
-      case (#err m) #err(m);
-    };
-  };
-
   system func preupgrade() {
     Debug.print("Preupgrade");
     if (is_initialized) {
       tradingPairsDataV2 := tradingPairs.share();
-      switch (httpAgent) {
-        case (?a) httpCache := a.share();
-        case (null) {};
-      };
     };
   };
 

@@ -5,19 +5,69 @@
 /// Contributors: Timo Hanke
 
 import Array "mo:base/Array";
+import Blob "mo:base/Blob";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
+import Nat "mo:base/Nat";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
+import Text "mo:base/Text";
 import Cycles "mo:base/ExperimentalCycles";
 
 import OracleDefinitions "./oracle_definitions";
+import HttpAgent "./http_agent";
 
 module {
-  public class Self(oracle_principal : Principal) {
+
+  public func transform_metal_price_api_response(raw : HttpAgent.HttpResponsePayload) : HttpAgent.HttpResponsePayload {
+    // example response:
+    // "{"success":true,"base":"USD","timestamp":1731494166,"rates":{"USDXAU":2609.5577138917,"XAU":0.0003832067}}""
+    // transformer returns:
+    // "2609.5577138917"
+    let fallbackResponse = {
+      status = raw.status;
+      body = raw.body;
+      headers = [];
+    };
+    switch (raw.status) {
+      case (200) {
+        let ?json = Text.decodeUtf8(Blob.fromArray(raw.body)) else return fallbackResponse;
+        if (not Text.startsWith(json, #text("{\"success\":true"))) {
+          return fallbackResponse;
+        };
+        // skip 5 first json values (success, base, timestamp, rates, USDXAU)
+        var skipColons = 5;
+        let chars = json.chars();
+        while (skipColons > 0) {
+          switch (chars.next()) {
+            case (null) return fallbackResponse;
+            case (?':') skipColons -= 1;
+            case (_) {};
+          };
+        };
+        // read value
+        var valueStr = "";
+        label L while (true) {
+          switch (chars.next()) {
+            case (null) return fallbackResponse;
+            case (?',') break L;
+            case (?x) valueStr := valueStr # Text.fromChar(x);
+          };
+        };
+        {
+          status = raw.status;
+          body = valueStr |> Text.encodeUtf8(_) |> Blob.toArray(_);
+          headers = [];
+        };
+      };
+      case (_) fallbackResponse;
+    };
+  };
+
+  public class Self(oracle_principal : Principal, httpAgent : HttpAgent.HttpAgent) {
     let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
 
     let neutriniteOracle : (
@@ -67,10 +117,9 @@ module {
         #ErrorGetRates : Text;
       };
     } {
-      if (base == "TCYCLES" or base == "GLDT") {
+      if (base == "TCYCLES") {
         let key = switch (base) {
           case ("TCYCLES") "XTC/USD";
-          case ("GLDT") "GLDT/USD";
           case (_) Prim.trap("Can never happen: unknown token for neutrinite");
         };
         let results = await neutriniteOracle.get_latest();
@@ -85,6 +134,37 @@ module {
           #Err(#ErrorGetRates("Neutrinite oracle did not provide key " # key));
         } else {
           #Ok(rate);
+        };
+      } else if (base == "GLDT") {
+        try {
+          let raw = await* httpAgent.simpleGet(
+            "api.metalpriceapi.com",
+            "v1/latest?api_key=739362f0a189bfb85a09c88715ee9d5e&currencies=XAU",
+            [
+              { name = "accept"; value = "application/json" },
+            ],
+            ?"USDXAU_rate",
+          );
+          let chars = raw.body.chars();
+          var valueStr = "";
+          var decimals : Int = 0;
+          var decimalFlag = false;
+          label L while (true) {
+            switch (chars.next()) {
+              case (null) break L;
+              case (?'.') decimalFlag := true;
+              case (?x) {
+                valueStr := valueStr # Text.fromChar(x);
+                if (decimalFlag) {
+                  decimals += 1;
+                };
+              };
+            };
+          };
+          let ?v = Nat.fromText(valueStr) else return #Err(#ErrorGetRates("Cannot parse Metal Price API response: " # raw.body));
+          #Ok(Float.fromInt(v) / 10 ** Float.fromInt(decimals));
+        } catch (err) {
+          #Err(#ErrorGetRates("Metal Price API error: " # Error.message(err)));
         };
       } else {
         let request : OracleDefinitions.GetExchangeRateRequest = {
