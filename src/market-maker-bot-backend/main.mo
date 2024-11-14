@@ -26,7 +26,6 @@ import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import HistoryModule "./history";
 import HTTP "./http";
-import HttpAgent "./http_agent";
 import MarketMaker "./market_maker";
 import OracleWrapper "./oracle_wrapper";
 import TPR "./trading_pairs_registry";
@@ -42,17 +41,9 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   stable let historyV2 : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
 
-  var httpAgent : ?HttpAgent.HttpAgent = null;
-  public query func http_transform(raw : HttpAgent.TransformArgs) : async HttpAgent.HttpResponsePayload = async U.require(httpAgent).transform(raw);
-  httpAgent := ?HttpAgent.HttpAgent(
-    http_transform,
-    [("USDXAU_rate", OracleWrapper.transform_metal_price_api_response)],
-    null,
-  );
-
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
-  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal, U.require(httpAgent));
+  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
   let default_spread_value : Float = 0.05;
 
   var bot_timer : Timer.TimerId = 0;

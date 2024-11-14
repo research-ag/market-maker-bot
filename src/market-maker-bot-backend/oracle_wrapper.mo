@@ -5,7 +5,6 @@
 /// Contributors: Timo Hanke
 
 import Array "mo:base/Array";
-import Blob "mo:base/Blob";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
@@ -18,56 +17,10 @@ import Text "mo:base/Text";
 import Cycles "mo:base/ExperimentalCycles";
 
 import OracleDefinitions "./oracle_definitions";
-import HttpAgent "./http_agent";
 
 module {
 
-  public func transform_metal_price_api_response(raw : HttpAgent.HttpResponsePayload) : HttpAgent.HttpResponsePayload {
-    // example response:
-    // "{"success":true,"base":"USD","timestamp":1731494166,"rates":{"USDXAU":2609.5577138917,"XAU":0.0003832067}}""
-    // transformer returns:
-    // "2609.5577138917"
-    let fallbackResponse = {
-      status = raw.status;
-      body = raw.body;
-      headers = [];
-    };
-    switch (raw.status) {
-      case (200) {
-        let ?json = Text.decodeUtf8(Blob.fromArray(raw.body)) else return fallbackResponse;
-        if (not Text.startsWith(json, #text("{\"success\":true"))) {
-          return fallbackResponse;
-        };
-        // skip 5 first json values (success, base, timestamp, rates, USDXAU)
-        var skipColons = 5;
-        let chars = json.chars();
-        while (skipColons > 0) {
-          switch (chars.next()) {
-            case (null) return fallbackResponse;
-            case (?':') skipColons -= 1;
-            case (_) {};
-          };
-        };
-        // read value
-        var valueStr = "";
-        label L while (true) {
-          switch (chars.next()) {
-            case (null) return fallbackResponse;
-            case (?',') break L;
-            case (?x) valueStr := valueStr # Text.fromChar(x);
-          };
-        };
-        {
-          status = raw.status;
-          body = valueStr |> Text.encodeUtf8(_) |> Blob.toArray(_);
-          headers = [];
-        };
-      };
-      case (_) fallbackResponse;
-    };
-  };
-
-  public class Self(oracle_principal : Principal, httpAgent : HttpAgent.HttpAgent) {
+  public class Self(oracle_principal : Principal) {
     let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
 
     let neutriniteOracle : (
@@ -75,6 +28,12 @@ module {
         get_latest : () -> async [((Nat, Nat), Text, Float)];
       }
     ) = actor ("u45jl-liaaa-aaaam-abppa-cai");
+
+    let metalPriceApiOracle : (
+      actor {
+        queryRates : ([Text]) -> async [?{ syncTimestamp : Nat64; value : Float }];
+      }
+    ) = actor ("k2ic6-3yaaa-aaaao-a3u6a-cai");
 
     func calculateRate(rate : Nat64, decimals : Nat32) : Float {
       let exponent : Float = Float.fromInt(Nat32.toNat(decimals));
@@ -137,33 +96,8 @@ module {
         };
       } else if (base == "GLDT") {
         try {
-          let raw = await* httpAgent.simpleGet(
-            "api.metalpriceapi.com",
-            "v1/latest?api_key=739362f0a189bfb85a09c88715ee9d5e&currencies=XAU",
-            [
-              { name = "accept"; value = "application/json" },
-            ],
-            ?"USDXAU_rate",
-          );
-          let chars = raw.body.chars();
-          var valueStr = "";
-          var decimals : Int = 0;
-          var decimalFlag = false;
-          label L while (true) {
-            switch (chars.next()) {
-              case (null) break L;
-              case (?'.') decimalFlag := true;
-              case (?x) {
-                valueStr := valueStr # Text.fromChar(x);
-                if (decimalFlag) {
-                  decimals += 1;
-                };
-              };
-            };
-          };
-          let ?v = Nat.fromText(valueStr) else return #Err(#ErrorGetRates("Cannot parse Metal Price API response: " # raw.body));
-          let rate = (Float.fromInt(v) / 10 ** Float.fromInt(decimals)) / 3110.35;
-          #Ok(rate);
+          let ?{ value } = (await metalPriceApiOracle.queryRates(["USDXAU"]))[0] else return #Err(#ErrorGetRates("Metal Price did not provide key USDXAU"));
+          #Ok(value / 3110.35);
         } catch (err) {
           #Err(#ErrorGetRates("Metal Price API error: " # Error.message(err)));
         };
