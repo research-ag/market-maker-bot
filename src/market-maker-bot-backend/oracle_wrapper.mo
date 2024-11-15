@@ -11,6 +11,7 @@ import Float "mo:base/Float";
 import Nat "mo:base/Nat";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
+import Prim "mo:prim";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Cycles "mo:base/ExperimentalCycles";
@@ -62,6 +63,8 @@ module {
         switch (baseSymbols[i]) {
           case "TCYCLES" Vec.add(neutriniteSymbolPairs, (i, "TCYCLES", "XTC/USD"));
           case "GLDT" Vec.add(metalPriceSymbolPairs, (i, "GLDT", "USDXAU"));
+          case "BTC" Vec.add(metalPriceSymbolPairs, (i, "BTC", "USDBTC"));
+          case "ETH" Vec.add(metalPriceSymbolPairs, (i, "ETH", "USDETH"));
           case _ {
             let request : OracleDefinitions.GetExchangeRateRequest = {
               timestamp = null;
@@ -171,10 +174,22 @@ module {
         case (?call) {
           try {
             let results = await call;
-            for (((i, _, remoteSymbol), idx) in Vec.items(metalPriceSymbolPairs)) {
+            // ignore rates, synchronised more than 6 hours ago
+            let minSyncTimestamp = Prim.time() - 6 * 60 * 60_000_000_000;
+            for (((i, localSymbol, remoteSymbol), idx) in Vec.items(metalPriceSymbolPairs)) {
               res[i] := switch (results[idx]) {
                 case (null) #Err(#ErrorGetRates("Metal Price API did not provide key " # remoteSymbol));
-                case (?{ value }) #Ok(value / 3110.35);
+                case (?{ value; syncTimestamp }) {
+                  if (syncTimestamp < minSyncTimestamp) {
+                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # Nat64.toText(syncTimestamp)));
+                  } else {
+                    if (localSymbol == "GLDT") {
+                      #Ok(value / 3110.35);
+                    } else {
+                      #Ok(value);
+                    };
+                  };
+                };
               };
             };
           } catch (err) {
