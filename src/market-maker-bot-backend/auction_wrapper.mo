@@ -84,10 +84,7 @@ module {
       #Err : Auction.ManageOrdersError;
     } {
       let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
-      let cancellations : Vec.Vector<Principal> = Vec.new();
-
       for ((token, bid, ask) in orders.vals()) {
-        Vec.add(cancellations, token);
         if (ask.amount > 0) {
           Vec.add(placements, #ask(token, ask.amount, ask.price));
         };
@@ -96,13 +93,13 @@ module {
         };
       };
       try {
-        await ac.manageOrders(?(#all(?Vec.toArray(cancellations))), Vec.toArray(placements), sessionNumber);
+        await ac.manageOrders(?(#all(null)), Vec.toArray(placements), sessionNumber);
       } catch (err) {
         #Err(#UnknownError(Error.message(err)));
       };
     };
 
-    public func removeOrders(tokens : [Principal]) : async* {
+    public func removeOrders() : async* {
       #Ok;
       #Err : {
         #CancellationError;
@@ -110,12 +107,7 @@ module {
       };
     } {
       try {
-        let response = await ac.manageOrders(
-          ?(#all(?tokens)), // cancel all orders for tokens
-          [],
-          null,
-        );
-
+        let response = await ac.manageOrders(?(#all(null)), [], null);
         switch (response) {
           case (#Ok(_)) #Ok;
           case (#Err(_)) #Err(#CancellationError);
