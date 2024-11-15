@@ -16,6 +16,7 @@ import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
 import Principal "mo:base/Principal";
+import RBTree "mo:base/RBTree";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
@@ -56,6 +57,18 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   var quote_token : ?Principal = null;
   var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
+
+  stable var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
+  switch (RBTree.size(stableAdminsMap)) {
+    case (0) {
+      let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
+      adminsMap.put(Principal.fromText("2vxsx-fae"), ());
+      stableAdminsMap := adminsMap.share();
+    };
+    case (_) {};
+  };
+  let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
+  adminsMap.unshare(stableAdminsMap);
 
   let metrics = PT.PromTracker("", 65);
   metrics.addSystemValues();
@@ -131,6 +144,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     if (is_initialized) {
       tradingPairsDataV2 := tradingPairs.share();
     };
+    stableAdminsMap := adminsMap.share();
   };
 
   system func postupgrade() {
@@ -145,6 +159,29 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         };
       },
     );
+  };
+
+  public query func listAdmins() : async [Principal] = async adminsMap.entries()
+  |> Iter.map<(Principal, ()), Principal>(_, func((p, _)) = p)
+  |> Iter.toArray(_);
+
+  private func assertAdminAccess(principal : Principal) : async* () {
+    if (adminsMap.get(principal) == null) {
+      throw Error.reject("No Access for this principal " # Principal.toText(principal));
+    };
+  };
+
+  public shared ({ caller }) func addAdmin(principal : Principal) : async () {
+    await* assertAdminAccess(caller);
+    adminsMap.put(principal, ());
+  };
+
+  public shared ({ caller }) func removeAdmin(principal : Principal) : async () {
+    if (Principal.equal(principal, caller)) {
+      throw Error.reject("Cannot remove yourself from admins");
+    };
+    await* assertAdminAccess(caller);
+    adminsMap.delete(principal);
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
@@ -207,13 +244,14 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   public query func getQuoteInfo() : async MarketMaker.TokenDescription = async tradingPairs.quoteInfo();
 
-  public func startBot(timer_interval : Nat) : async {
+  public shared ({ caller }) func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
     #Err : ({
       #NotInitializedError;
       #AlreadyStartedError;
     });
   } {
+    await* assertAdminAccess(caller);
     Debug.print("Start bot");
 
     if (is_initialized == false) {
@@ -239,7 +277,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     #Ok(getState());
   };
 
-  public func stopBot() : async {
+  public shared ({ caller }) func stopBot() : async {
     #Ok : (BotState);
     #Err : ({
       #NotInitializedError;
@@ -247,6 +285,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       #CancelOrdersError;
     });
   } {
+    await* assertAdminAccess(caller);
     Debug.print("Stop bot");
 
     if (is_initialized == false) {
@@ -274,7 +313,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func setSpreadValue(baseSymbol : Text, spreadValue : Float) : async () {
+  public shared ({ caller }) func setSpreadValue(baseSymbol : Text, spreadValue : Float) : async () {
+    await* assertAdminAccess(caller);
     switch (tradingPairs.getPair(baseSymbol)) {
       case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
       case (?p) {
@@ -285,11 +325,13 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   public query func queryQuoteReserve() : async Nat = async tradingPairs.getQuoteReserve();
 
-  public func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
+  public shared ({ caller }) func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
+    await* assertAdminAccess(caller);
     await* tradingPairs.setQuoteBalance(auction, baseSymbol, balance);
   };
 
-  public func notify(token : ?Principal) : async () {
+  public shared ({ caller }) func notify(token : ?Principal) : async () {
+    await* assertAdminAccess(caller);
     switch (token) {
       case (?t) ignore await* auction.notify(t);
       case (null) {
@@ -305,7 +347,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   var executionLock : Bool = false;
 
-  public func executeMarketMaking() : async () {
+  public shared ({ caller }) func executeMarketMaking() : async () {
+    await* assertAdminAccess(caller);
     assert not executionLock;
     executionLock := true;
     try {
@@ -354,7 +397,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+    await* assertAdminAccess(caller);
     assert not is_running;
     let src : Auction.Self = actor (Principal.toText(source_auction));
 
