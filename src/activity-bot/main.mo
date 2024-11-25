@@ -2,6 +2,7 @@ import Array "mo:base/Array";
 import Blob "mo:base/Blob";
 import Bool "mo:base/Bool";
 import Debug "mo:base/Debug";
+import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
 import Int32 "mo:base/Int32";
@@ -10,6 +11,7 @@ import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
+import RBTree "mo:base/RBTree";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
@@ -67,6 +69,18 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   var quote_token : ?Principal = null;
   var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
+
+  stable var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
+  switch (RBTree.size(stableAdminsMap)) {
+    case (0) {
+      let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
+      adminsMap.put(Principal.fromText("2vxsx-fae"), ());
+      stableAdminsMap := adminsMap.share();
+    };
+    case (_) {};
+  };
+  let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
+  adminsMap.unshare(stableAdminsMap);
 
   let metrics = PT.PromTracker("", 65);
   metrics.addSystemValues();
@@ -142,6 +156,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     if (is_initialized) {
       tradingPairsDataV3 := tradingPairs.share();
     };
+    stableAdminsMap := adminsMap.share();
   };
 
   system func postupgrade() {
@@ -156,6 +171,29 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         };
       },
     );
+  };
+
+  public query func listAdmins() : async [Principal] = async adminsMap.entries()
+  |> Iter.map<(Principal, ()), Principal>(_, func((p, _)) = p)
+  |> Iter.toArray(_);
+
+  private func assertAdminAccess(principal : Principal) : async* () {
+    if (adminsMap.get(principal) == null) {
+      throw Error.reject("No Access for this principal " # Principal.toText(principal));
+    };
+  };
+
+  public shared ({ caller }) func addAdmin(principal : Principal) : async () {
+    await* assertAdminAccess(caller);
+    adminsMap.put(principal, ());
+  };
+
+  public shared ({ caller }) func removeAdmin(principal : Principal) : async () {
+    if (Principal.equal(principal, caller)) {
+      throw Error.reject("Cannot remove yourself from admins");
+    };
+    await* assertAdminAccess(caller);
+    adminsMap.delete(principal);
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
@@ -203,13 +241,14 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
   public query func getQuoteInfo() : async MarketMaker.TokenDescription = async tradingPairs.quoteInfo();
 
-  public func startBot(timer_interval : Nat) : async {
+  public shared ({ caller }) func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
     #Err : ({
       #NotInitializedError;
       #AlreadyStartedError;
     });
   } {
+    await* assertAdminAccess(caller);
     Debug.print("Start bot");
 
     if (is_initialized == false) {
@@ -235,7 +274,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     #Ok(getState());
   };
 
-  public func stopBot() : async {
+  public shared ({ caller }) func stopBot() : async {
     #Ok : (BotState);
     #Err : ({
       #NotInitializedError;
@@ -243,6 +282,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       #CancelOrdersError;
     });
   } {
+    await* assertAdminAccess(caller);
     Debug.print("Stop bot");
 
     if (is_initialized == false) {
@@ -270,7 +310,8 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     };
   };
 
-  public func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+    await* assertAdminAccess(caller);
     assert not is_running;
     let src : Auction.Self = actor (Principal.toText(source_auction));
 
@@ -309,7 +350,8 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
-  public func notify(token : ?Principal) : async () {
+  public shared ({ caller }) func notify(token : ?Principal) : async () {
+    await* assertAdminAccess(caller);
     switch (token) {
       case (?t) ignore await* auction.notify(t);
       case (null) {
@@ -325,7 +367,8 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
   var executionLock : Bool = false;
 
-  public func executeActivityBot() : async () {
+  public shared ({ caller }) func executeActivityBot() : async () {
+    await* assertAdminAccess(caller);
     assert not executionLock;
     executionLock := true;
     try {
