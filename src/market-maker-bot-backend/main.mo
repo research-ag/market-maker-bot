@@ -153,23 +153,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     Debug.print(HistoryModule.getText(historyItem));
   };
 
-  func cancelAllOrders() : async* {
-    #Ok : ();
-    #Err : ();
-  } {
-    let pairs = tradingPairs.getPairs();
-
-    if (pairs.size() == 0) {
-      return #Ok;
-    };
-
-    let tokens = Array.tabulate<Principal>(
-      pairs.size(),
-      func(i : Nat) : Principal = pairs[i].base.principal,
-    );
-
-    let execute_result = await* auction.removeOrders(tokens);
-
+  func cancelAllOrders() : async* { #Ok : (); #Err : () } {
+    let execute_result = await* auction.removeOrders();
     switch (execute_result) {
       case (#Ok) {
         addHistoryItem(null, null, null, null, "ORDERS REMOVED");
