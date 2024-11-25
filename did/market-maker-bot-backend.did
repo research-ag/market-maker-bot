@@ -10,7 +10,10 @@ type MarketPair = record {
   };
   base_credits : nat;
   quote_credits : nat;
-  spread_value : float64;
+  spread : record {
+    float64;
+    float64;
+  };
 };
 type MarketMakerBot = service {
   addCredits : () -> ();

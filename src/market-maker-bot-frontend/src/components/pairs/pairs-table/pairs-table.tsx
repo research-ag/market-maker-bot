@@ -53,16 +53,16 @@ export const PairsTable = () => {
                   <InfoItem content={`Decimals ${pair.base.decimals}`}/>
                 </td>
                 <td>
-                  <InfoItem content={'' + pair.spread_value} withEdit={true} onEdit={() => {
+                  <InfoItem content={'Value: ' + pair.spread[0] + '; bias: ' + pair.spread[1]} withEdit={true} onEdit={() => {
                     setSelectedItem(pair);
-                    setTimeout(() => setIsSettingsModalOpen(true));
+                    setTimeout(() => setIsSettingsModalOpen(true), 50);
                   }}/>
                 </td>
                 <td>
                   <InfoItem content={'' + (Number(pair.quote_credits) / Math.pow(10, quoteInfo?.decimals || 0))}
                             withEdit={true} onEdit={() => {
                     setSelectedItem(pair);
-                    setTimeout(() => setIsQuoteBalanceModalOpen(true));
+                    setTimeout(() => setIsQuoteBalanceModalOpen(true), 50);
                   }}/>
                 </td>
                 <td>

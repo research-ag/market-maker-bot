@@ -1,4 +1,4 @@
-import {useEffect, useMemo} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {Controller, SubmitHandler, useForm, useFormState} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z as zod} from 'zod';
@@ -9,6 +9,7 @@ import {MarketPairShared} from "../../declarations/market-maker-bot-backend/mark
 
 interface SettingsFormValues {
     spread: number;
+    spreadBias: number;
 }
 
 interface SettingsModalProps {
@@ -21,11 +22,14 @@ const schema = zod.object({
     spread: zod
         .string()
         .refine(value => !isNaN(Number(value)) && Number(value) > 0 && Number(value) <= 1),
+    spreadBias: zod
+        .string()
+        .refine(value => !isNaN(Number(value)) && Number(value) >= -1 && Number(value) <= 1),
 });
 
 const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
     const defaultValues: SettingsFormValues = useMemo(
-        () => ({spread: pair.spread_value}),
+        () => ({spread: pair.spread?.[0] || 0.05, spreadBias: pair.spread?.[1] || 0.0}),
         [],
     );
 
@@ -33,6 +37,7 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
         handleSubmit,
         control,
         reset: resetForm,
+        watch,
     } = useForm<SettingsFormValues>({
         defaultValues,
         resolver: zodResolver(schema),
@@ -42,8 +47,19 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
     const {isDirty, isValid} = useFormState({control});
     const {mutate: update, error, isLoading, reset: resetApi} = useUpdateTradingPairSettings();
 
-    const submit: SubmitHandler<SettingsFormValues> = ({spread}) => {
-        update({baseSymbol: pair.base.symbol, spread: +spread}, {
+    const [pricePrediction, setPricePrediction] = useState<[number, number]>([0, 0]);
+    useEffect(() => {
+        const {unsubscribe} = watch((v) => {
+            setPricePrediction([
+                1 + (v.spreadBias ? +v.spreadBias : 0) + (v.spread ? +v.spread : 0),
+                1 + (v.spreadBias ? +v.spreadBias : 0) - (v.spread ? +v.spread : 0),
+            ])
+        });
+        return () => unsubscribe();
+    }, [watch]);
+
+    const submit: SubmitHandler<SettingsFormValues> = ({spread, spreadBias}) => {
+        update({baseSymbol: pair.base.symbol, spreadValue: +spread, spreadBias: +spreadBias}, {
             onSuccess: () => {
                 onClose();
             },
@@ -68,7 +84,7 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
                                 control={control}
                                 render={({field, fieldState}) => (
                                     <FormControl>
-                                        <FormLabel>Spread</FormLabel>
+                                        <FormLabel>Spread value</FormLabel>
                                         <Input
                                             type="number"
                                             variant="outlined"
@@ -87,8 +103,38 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
                                         />
                                     </FormControl>
                                 )}/>
+                            <Controller
+                                name="spreadBias"
+                                control={control}
+                                render={({field, fieldState}) => (
+                                    <FormControl>
+                                        <FormLabel>Spread bias</FormLabel>
+                                        <Input
+                                            type="number"
+                                            variant="outlined"
+                                            name={field.name}
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            slotProps={{
+                                                input: {
+                                                    min: -1,
+                                                    max: 1,
+                                                    step: 0.0001,
+                                                },
+                                            }}
+                                            autoComplete="off"
+                                            error={!!fieldState.error}
+                                        />
+                                    </FormControl>
+                                )}/>
                         </Box>
                         {!!error && <ErrorAlert errorMessage={(error as Error).message}/>}
+                        <Typography level="body-xs">
+                            Ask price: <b>rate * {pricePrediction[0].toFixed(4)}</b>
+                            <br/>
+                            Bid price: <b>rate * {pricePrediction[1].toFixed(4)}</b>
+                            <br/>
+                        </Typography>
                         <Button
                             sx={{marginTop: 2}}
                             variant="solid"
