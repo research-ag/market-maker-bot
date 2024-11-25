@@ -1,6 +1,6 @@
 import {Box, Table} from '@mui/joy';
 
-import {useGetPairsList, useGetQuoteInfo} from '../../../integration';
+import {useGetPairsList, useGetQuoteInfo, useIsAdmin} from '../../../integration';
 import InfoItem from '../../root/info-item';
 import {useState} from "react";
 import SettingsModal from "../../settings-modal";
@@ -14,7 +14,9 @@ export const PairsTable = () => {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isQuoteBalanceModalOpen, setIsQuoteBalanceModalOpen] = useState(false);
 
-  const [selectedItem, setSelectedItem] = useState<MarketPairShared>({ base: { symbol: '-'}, spread_value: 0.05 } as any);
+  const [selectedItem, setSelectedItem] = useState<MarketPairShared>({ base: { symbol: '-'}, spread: [0.05, 0.0] } as any);
+
+  const isAdmin = useIsAdmin();
 
   return (
     <Box sx={{ width: '100%', overflow: 'auto' }}>
@@ -53,14 +55,14 @@ export const PairsTable = () => {
                   <InfoItem content={`Decimals ${pair.base.decimals}`}/>
                 </td>
                 <td>
-                  <InfoItem content={'Value: ' + pair.spread[0] + '; bias: ' + pair.spread[1]} withEdit={true} onEdit={() => {
+                  <InfoItem content={'Value: ' + pair.spread[0] + '; bias: ' + pair.spread[1]} withEdit={isAdmin} onEdit={() => {
                     setSelectedItem(pair);
                     setTimeout(() => setIsSettingsModalOpen(true), 50);
                   }}/>
                 </td>
                 <td>
                   <InfoItem content={'' + (Number(pair.quote_credits) / Math.pow(10, quoteInfo?.decimals || 0))}
-                            withEdit={true} onEdit={() => {
+                            withEdit={isAdmin} onEdit={() => {
                     setSelectedItem(pair);
                     setTimeout(() => setIsQuoteBalanceModalOpen(true), 50);
                   }}/>

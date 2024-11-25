@@ -9,6 +9,8 @@ import {Pairs} from '../pairs';
 import {OrdersHistory} from '../orders-history';
 
 import InfoItem from './info-item';
+import Owners from "../owners";
+import ConnectButton from "../connect-button";
 
 const Root = () => {
   const { data: botState, isFetching } = useGetBotState();
@@ -39,11 +41,14 @@ const Root = () => {
           <TabList sx={{ marginRight: 1, flexGrow: 1 }} variant="plain">
             <Tab color="neutral">Pairs</Tab>
             <Tab color="neutral">Order history</Tab>
+            <Tab color="neutral">Admins</Tab>
           </TabList>
+          <ConnectButton />
           <ThemeButton sx={{ marginLeft: 1 }} />
         </Box>
         {tabValue === 0 && <Pairs />}
         {tabValue === 1 && <OrdersHistory />}
+        {tabValue === 2 && <Owners />}
       </Tabs>
     </Box>
   );
