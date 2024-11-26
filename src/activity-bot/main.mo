@@ -123,7 +123,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
-        ignore metrics.addPullValue("spread_bias_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.1 * 10000)));
+        ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
       };
       is_initializing := false;
       is_initialized := true;
