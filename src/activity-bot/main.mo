@@ -310,28 +310,28 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     };
   };
 
+  func toSubaccount(p : Principal) : Blob {
+    let bytes = Blob.toArray(Principal.toBlob(p));
+    let size = bytes.size();
+    assert size <= 29;
+    Array.tabulate<Nat8>(
+      32,
+      func(i : Nat) : Nat8 {
+        if (i + size < 31) {
+          0;
+        } else if (i + size == 31) {
+          Nat8.fromNat(size);
+        } else {
+          bytes[i + size - 32];
+        };
+      },
+    ) |> Blob.fromArray(_);
+  };
+
   public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     await* assertAdminAccess(caller);
     assert not is_running;
     let src : Auction.Self = actor (Principal.toText(source_auction));
-
-    func toSubaccount(p : Principal) : Blob {
-      let bytes = Blob.toArray(Principal.toBlob(p));
-      let size = bytes.size();
-      assert size <= 29;
-      Array.tabulate<Nat8>(
-        32,
-        func(i : Nat) : Nat8 {
-          if (i + size < 31) {
-            0;
-          } else if (i + size == 31) {
-            Nat8.fromNat(size);
-          } else {
-            bytes[i + size - 32];
-          };
-        },
-      ) |> Blob.fromArray(_);
-    };
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
     ignore await src.manageOrders(? #all(null), [], null);
@@ -348,6 +348,31 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       });
     };
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
+  };
+
+  public shared ({ caller }) func transfer_base_credits(receiver : Principal) : async Text {
+    await* assertAdminAccess(caller);
+    let auction : Auction.Self = actor (Principal.toText(auction_principal));
+    let destSubaccount = toSubaccount(receiver);
+    let qt = U.require(quote_token);
+
+    let credits = await auction.queryCredits();
+    for ((token, acc, _) in credits.vals()) {
+      if (not Principal.equal(token, qt)) {
+        assert acc.locked == 0;
+      };
+    };
+    for ((token, acc, _) in credits.vals()) {
+      if (not Principal.equal(token, qt)) {
+        ignore await auction.icrc84_withdraw({
+          to = { owner = auction_principal; subaccount = ?destSubaccount };
+          amount = acc.available;
+          token;
+          expected_fee = null;
+        });
+      };
+    };
+    "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
   };
 
   public shared ({ caller }) func notify(token : ?Principal) : async () {
