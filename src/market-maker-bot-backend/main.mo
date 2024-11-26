@@ -345,6 +345,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   public shared ({ caller }) func executeMarketMaking() : async () {
     await* assertAdminAccess(caller);
+    await* executeMarketMaking_();
+  };
+
+  func executeMarketMaking_() : async* () {
     assert not executionLock;
     executionLock := true;
     try {
@@ -438,7 +442,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       return;
     };
 
-    await executeMarketMaking();
+    await* executeMarketMaking_();
   };
 
   func runTimer<system>() : () {

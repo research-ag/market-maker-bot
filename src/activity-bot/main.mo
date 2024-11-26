@@ -369,6 +369,10 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
   public shared ({ caller }) func executeActivityBot() : async () {
     await* assertAdminAccess(caller);
+    await* executeActivityBot_();
+  };
+
+  func executeActivityBot_() : async* () {
     assert not executionLock;
     executionLock := true;
     try {
@@ -466,7 +470,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       return;
     };
 
-    await executeActivityBot();
+    await* executeActivityBot_();
   };
 
   func runTimer<system>() : () {
