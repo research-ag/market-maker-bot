@@ -419,6 +419,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         expected_fee = null;
       });
     };
+    for (p in tradingPairs.getPairs().vals()) {
+      p.quote_credits := 0;
+      p.base_credits := 0;
+    };
+    tradingPairs.quoteReserve := 0;
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
