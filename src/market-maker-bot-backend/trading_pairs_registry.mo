@@ -77,7 +77,7 @@ module TradingPairsRegistry {
     var quote : ?MarketMaker.TokenDescription = null;
 
     var registry : AssocList.AssocList<Text, MarketMaker.MarketPair> = null;
-    var quoteReserve : Nat = 0;
+    public var quoteReserve : Nat = 0;
     // amount of seen transaction history items
     var synchronizedTransactions : Nat = 0;
 

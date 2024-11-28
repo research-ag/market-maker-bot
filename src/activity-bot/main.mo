@@ -347,6 +347,11 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         expected_fee = null;
       });
     };
+    for (p in tradingPairs.getPairs().vals()) {
+      p.quote_credits := 0;
+      p.base_credits := 0;
+    };
+    tradingPairs.quoteReserve := 0;
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
@@ -371,6 +376,9 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
           expected_fee = null;
         });
       };
+    };
+    for (p in tradingPairs.getPairs().vals()) {
+      p.base_credits := 0;
     };
     "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
   };
