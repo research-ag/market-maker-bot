@@ -318,12 +318,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   public shared ({ caller }) func notify(token : ?Principal) : async () {
     await* assertAdminAccess(caller);
     switch (token) {
-      case (?t) ignore await* auction.notify(t);
+      case (?t) ignore await* auction.notify([t]);
       case (null) {
         let supported_tokens = await* auction.getSupportedTokens();
-        for (token in supported_tokens.vals()) {
-          ignore await* auction.notify(token);
-        };
+        ignore await* auction.notify(supported_tokens);
       };
     };
     ignore await* tradingPairs.replayTransactionHistory(auction);
@@ -411,13 +409,20 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
+    let calls : Vec.Vector<async Any> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
-      ignore await src.icrc84_withdraw({
-        to = { owner = dest_auction; subaccount = ?destSubaccount };
-        amount = acc.available;
-        token;
-        expected_fee = null;
-      });
+      Vec.add(
+        calls,
+        src.icrc84_withdraw({
+          to = { owner = dest_auction; subaccount = ?destSubaccount };
+          amount = acc.available;
+          token;
+          expected_fee = null;
+        }),
+      );
+    };
+    for (call in Vec.vals(calls)) {
+      ignore await call;
     };
     for (p in tradingPairs.getPairs().vals()) {
       p.quote_credits := 0;
