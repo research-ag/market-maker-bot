@@ -383,6 +383,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     await* assertAdminAccess(caller);
     assert not is_running;
+    let qt = U.require(quote_token);
     let src : Auction.Self = actor (Principal.toText(source_auction));
 
     func toSubaccount(p : Principal) : Blob {
@@ -409,26 +410,38 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
-    let calls : Vec.Vector<async Any> = Vec.new();
+    let calls : Vec.Vector<(Principal, async Any, ?MarketMaker.MarketPair)> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
       Vec.add(
         calls,
-        src.icrc84_withdraw({
-          to = { owner = dest_auction; subaccount = ?destSubaccount };
-          amount = acc.available;
-          token;
-          expected_fee = null;
-        }),
+        (
+          token,
+          src.icrc84_withdraw({
+            to = { owner = dest_auction; subaccount = ?destSubaccount };
+            amount = acc.available;
+            token;
+            expected_fee = null;
+          }),
+          tradingPairs.getPairByLedger(token),
+        ),
       );
     };
-    for (call in Vec.vals(calls)) {
-      ignore await call;
+    for ((token, call, pair) in Vec.vals(calls)) {
+      try {
+        ignore await call;
+        switch (pair) {
+          case (?p) p.base_credits := 0;
+          case (null) if (Principal.equal(token, qt)) {
+            for (p in tradingPairs.getPairs().vals()) {
+              p.quote_credits := 0;
+            };
+            tradingPairs.quoteReserve := 0;
+          };
+        };
+      } catch (err) {
+        Debug.print(Error.message(err));
+      };
     };
-    for (p in tradingPairs.getPairs().vals()) {
-      p.quote_credits := 0;
-      p.base_credits := 0;
-    };
-    tradingPairs.quoteReserve := 0;
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 

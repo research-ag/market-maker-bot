@@ -319,6 +319,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     await* assertAdminAccess(caller);
     assert not is_running;
+    let qt = U.require(quote_token);
     let src : Auction.Self = actor (Principal.toText(source_auction));
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
@@ -327,26 +328,38 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
-    let calls : Vec.Vector<async Any> = Vec.new();
+    let calls : Vec.Vector<(Principal, async Any, ?MarketMaker.MarketPair)> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
       Vec.add(
         calls,
-        src.icrc84_withdraw({
-          to = { owner = dest_auction; subaccount = ?destSubaccount };
-          amount = acc.available;
-          token;
-          expected_fee = null;
-        }),
+        (
+          token,
+          src.icrc84_withdraw({
+            to = { owner = dest_auction; subaccount = ?destSubaccount };
+            amount = acc.available;
+            token;
+            expected_fee = null;
+          }),
+          tradingPairs.getPairByLedger(token),
+        ),
       );
     };
-    for (call in Vec.vals(calls)) {
-      ignore await call;
+    for ((token, call, pair) in Vec.vals(calls)) {
+      try {
+        ignore await call;
+        switch (pair) {
+          case (?p) p.base_credits := 0;
+          case (null) if (Principal.equal(token, qt)) {
+            for (p in tradingPairs.getPairs().vals()) {
+              p.quote_credits := 0;
+            };
+            tradingPairs.quoteReserve := 0;
+          };
+        };
+      } catch (err) {
+        Debug.print(Error.message(err));
+      };
     };
-    for (p in tradingPairs.getPairs().vals()) {
-      p.quote_credits := 0;
-      p.base_credits := 0;
-    };
-    tradingPairs.quoteReserve := 0;
     "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
@@ -362,25 +375,33 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         assert acc.locked == 0;
       };
     };
-    let calls : Vec.Vector<async Any> = Vec.new();
+    let calls : Vec.Vector<(async Any, ?MarketMaker.MarketPair)> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
       if (not Principal.equal(token, qt)) {
         Vec.add(
           calls,
-          auction.icrc84_withdraw({
-            to = { owner = auction_principal; subaccount = ?destSubaccount };
-            amount = acc.available;
-            token;
-            expected_fee = null;
-          }),
+          (
+            auction.icrc84_withdraw({
+              to = { owner = auction_principal; subaccount = ?destSubaccount };
+              amount = acc.available;
+              token;
+              expected_fee = null;
+            }),
+            tradingPairs.getPairByLedger(token),
+          ),
         );
       };
     };
-    for (call in Vec.vals(calls)) {
-      ignore await call;
-    };
-    for (p in tradingPairs.getPairs().vals()) {
-      p.base_credits := 0;
+    for ((call, pair) in Vec.vals(calls)) {
+      try {
+        ignore await call;
+        switch (pair) {
+          case (?p) p.base_credits := 0;
+          case (null) {};
+        };
+      } catch (err) {
+        Debug.print(Error.message(err));
+      };
     };
     "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
   };

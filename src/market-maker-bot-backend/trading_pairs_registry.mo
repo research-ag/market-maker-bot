@@ -78,6 +78,15 @@ module TradingPairsRegistry {
       AssocList.find<Text, MarketMaker.MarketPair>(registry, baseSymbol, Text.equal);
     };
 
+    public func getPairByLedger(ledger : Principal) : ?MarketMaker.MarketPair {
+      for ((_, pair) in List.toIter(registry)) {
+        if (Principal.equal(pair.base.principal, ledger)) {
+          return ?pair;
+        };
+      };
+      null;
+    };
+
     public func initTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
