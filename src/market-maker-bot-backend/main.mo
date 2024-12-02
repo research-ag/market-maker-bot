@@ -380,7 +380,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async () {
     await* assertAdminAccess(caller);
     assert not is_running;
     let qt = U.require(quote_token);
@@ -410,7 +410,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
-    let calls : Vec.Vector<(Principal, async Any, ?MarketMaker.MarketPair)> = Vec.new();
+    let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
       Vec.add(
         calls,
@@ -428,21 +428,22 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
     for ((token, call, pair) in Vec.vals(calls)) {
       try {
-        ignore await call;
-        switch (pair) {
-          case (?p) p.base_credits := 0;
-          case (null) if (Principal.equal(token, qt)) {
-            for (p in tradingPairs.getPairs().vals()) {
-              p.quote_credits := 0;
+        switch (await call) {
+          case (#Ok _) switch (pair) {
+            case (?p) p.base_credits := 0;
+            case (null) if (Principal.equal(token, qt)) {
+              for (p in tradingPairs.getPairs().vals()) {
+                p.quote_credits := 0;
+              };
+              tradingPairs.quoteReserve := 0;
             };
-            tradingPairs.quoteReserve := 0;
           };
+          case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
         };
       } catch (err) {
-        Debug.print(Error.message(err));
+        Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
       };
     };
-    "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
   func executeBot() : async () {

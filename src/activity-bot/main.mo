@@ -316,7 +316,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     ) |> Blob.fromArray(_);
   };
 
-  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
+  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async () {
     await* assertAdminAccess(caller);
     assert not is_running;
     let qt = U.require(quote_token);
@@ -328,7 +328,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     for ((_, acc, _) in credits.vals()) {
       assert acc.locked == 0;
     };
-    let calls : Vec.Vector<(Principal, async Any, ?MarketMaker.MarketPair)> = Vec.new();
+    let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
       Vec.add(
         calls,
@@ -346,21 +346,22 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     };
     for ((token, call, pair) in Vec.vals(calls)) {
       try {
-        ignore await call;
-        switch (pair) {
-          case (?p) p.base_credits := 0;
-          case (null) if (Principal.equal(token, qt)) {
-            for (p in tradingPairs.getPairs().vals()) {
-              p.quote_credits := 0;
+        switch (await call) {
+          case (#Ok _) switch (pair) {
+            case (?p) p.base_credits := 0;
+            case (null) if (Principal.equal(token, qt)) {
+              for (p in tradingPairs.getPairs().vals()) {
+                p.quote_credits := 0;
+              };
+              tradingPairs.quoteReserve := 0;
             };
-            tradingPairs.quoteReserve := 0;
           };
+          case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
         };
       } catch (err) {
-        Debug.print(Error.message(err));
+        Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
       };
     };
-    "Credits transferred to subaccount: " # debug_show destSubaccount # "; src credits: " # debug_show (await src.queryCredits()) # "; dest credits: " # debug_show (await src.queryCredits());
   };
 
   public shared ({ caller }) func transfer_base_credits(receiver : Principal) : async Text {
@@ -375,12 +376,13 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         assert acc.locked == 0;
       };
     };
-    let calls : Vec.Vector<(async Any, ?MarketMaker.MarketPair)> = Vec.new();
+    let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
     for ((token, acc, _) in credits.vals()) {
       if (not Principal.equal(token, qt)) {
         Vec.add(
           calls,
           (
+            token,
             auction.icrc84_withdraw({
               to = { owner = auction_principal; subaccount = ?destSubaccount };
               amount = acc.available;
@@ -392,15 +394,15 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         );
       };
     };
-    for ((call, pair) in Vec.vals(calls)) {
+    for ((token, call, pair) in Vec.vals(calls)) {
       try {
-        ignore await call;
-        switch (pair) {
-          case (?p) p.base_credits := 0;
-          case (null) {};
+        switch (await call, pair) {
+          case (#Ok _, ?p) p.base_credits := 0;
+          case (#Err err, _) Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+          case (_) {};
         };
       } catch (err) {
-        Debug.print(Error.message(err));
+        Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
       };
     };
     "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
