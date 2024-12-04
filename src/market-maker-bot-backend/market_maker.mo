@@ -49,7 +49,7 @@ module MarketMaker {
     base : TokenDescription;
     base_credits : Nat;
     quote_credits : Nat;
-    spread_value : Float;
+    spread : (value : Float, bias : Float);
   };
 
   public type MarketPair = {
@@ -58,7 +58,7 @@ module MarketMaker {
     var base_credits : Nat;
     // total quote token credits assigned to this pair: available + locked by currently placed bid
     var quote_credits : Nat;
-    var spread_value : Float;
+    var spread : (value : Float, bias : Float);
   };
 
   let digits : Float = 5;
@@ -74,17 +74,17 @@ module MarketMaker {
       pair with
       base_credits = pair.base_credits;
       quote_credits = pair.quote_credits;
-      spread_value = pair.spread_value;
+      spread = pair.spread;
     };
   };
 
-  public func getPrices(spread : Float, currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
+  public func getPrices(spread : (value : Float, bias : Float), currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
     // normalize the price before create the order to the smallest units of the tokens
     let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
 
     {
-      bid_price = limitPrecision(currency_rate * (1.0 - spread) * Float.pow(10, multiplicator));
-      ask_price = limitPrecision(currency_rate * (1.0 + spread) * Float.pow(10, multiplicator));
+      bid_price = limitPrecision(currency_rate * (1.0 + spread.1 - spread.0) * Float.pow(10, multiplicator));
+      ask_price = limitPrecision(currency_rate * (1.0 + spread.1 + spread.0) * Float.pow(10, multiplicator));
     };
   };
 
@@ -123,7 +123,7 @@ module MarketMaker {
       // the order to the smallest units of the tokens
       let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
-      let { bid_price; ask_price } = getPrices(pair.spread_value, rates[i], price_decimals_multiplicator);
+      let { bid_price; ask_price } = getPrices(pair.spread, rates[i], price_decimals_multiplicator);
       let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
 
       Vec.add(

@@ -15,8 +15,37 @@ import U "./utils";
 
 module TradingPairsRegistry {
 
-  public type StableDataV2 = {
+  public type StableDataV3 = {
     registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
+    quoteReserve : Nat;
+    synchronizedTransactions : Nat;
+  };
+
+  public func defaultStableDataV3() : StableDataV3 = {
+    registry = null;
+    quoteReserve = 0;
+    synchronizedTransactions = 0;
+  };
+
+  public func migrateStableDataV3(data : StableDataV2) : StableDataV3 = {
+    registry = List.map<(Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread_value : Float }), (Text, MarketMaker.MarketPair)>(
+      data.registry,
+      func(t, x) = (
+        t,
+        {
+          base = x.base;
+          var base_credits = x.base_credits;
+          var quote_credits = x.quote_credits;
+          var spread = (x.spread_value, 0.0);
+        },
+      ),
+    );
+    quoteReserve = data.quoteReserve;
+    synchronizedTransactions = 0;
+  };
+
+  public type StableDataV2 = {
+    registry : AssocList.AssocList<Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread_value : Float }>;
     quoteReserve : Nat;
     synchronizedTransactions : Nat;
   };
@@ -34,7 +63,7 @@ module TradingPairsRegistry {
   };
 
   public type StableDataV1 = {
-    registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
+    registry : AssocList.AssocList<Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread_value : Float }>;
     quoteReserve : Nat;
   };
 
@@ -78,7 +107,7 @@ module TradingPairsRegistry {
       AssocList.find<Text, MarketMaker.MarketPair>(registry, baseSymbol, Text.equal);
     };
 
-    public func initTokens(auction : AuctionWrapper.Self, default_spread_value : Float) : async* (Principal, [Principal]) {
+    public func initTokens(auction : AuctionWrapper.Self, spread : (Float, Float)) : async* (Principal, [Principal]) {
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       let tokens_info = Tokens.getTokensInfo();
@@ -102,7 +131,7 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var spread_value = default_spread_value;
+                var spread = spread;
               };
 
               let (upd, oldValue) = AssocList.replace<Text, MarketMaker.MarketPair>(
@@ -222,11 +251,11 @@ module TradingPairsRegistry {
       sessionNumber;
     };
 
-    public func share() : StableDataV2 {
+    public func share() : StableDataV3 {
       { registry; quoteReserve; synchronizedTransactions };
     };
 
-    public func unshare(data : StableDataV2) {
+    public func unshare(data : StableDataV3) {
       registry := data.registry;
       quoteReserve := data.quoteReserve;
       synchronizedTransactions := data.synchronizedTransactions;
