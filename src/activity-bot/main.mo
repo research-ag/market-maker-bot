@@ -64,6 +64,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   /// Bot state flags and variables
   stable var bot_timer_interval : Nat = 6 * 60;
   stable var is_running : Bool = false;
+
   var is_initialized : Bool = false;
   var is_initializing : Bool = false;
   var quote_token : ?Principal = null;
@@ -81,6 +82,9 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   };
   let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
   adminsMap.unshare(stableAdminsMap);
+
+  // a lock that prevents bot to run when set
+  var system_lock : Bool = false;
 
   let metrics = PT.PromTracker("", 65);
   metrics.addSystemValues();
@@ -249,6 +253,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     });
   } {
     await* assertAdminAccess(caller);
+    assert not system_lock;
     Debug.print("Start bot");
 
     if (is_initialized == false) {
@@ -328,75 +333,29 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     ) |> Blob.fromArray(_);
   };
 
-  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async () {
+  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     await* assertAdminAccess(caller);
     assert not is_running;
+    assert not system_lock;
+    system_lock := true;
     let qt = U.require(quote_token);
     let src : Auction.Self = actor (Principal.toText(source_auction));
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
-    ignore await src.manageOrders(? #all(null), [], null);
-    let credits = await src.queryCredits();
-    for ((_, acc, _) in credits.vals()) {
-      assert acc.locked == 0;
-    };
-    let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
-    for ((token, acc, _) in credits.vals()) {
-      Vec.add(
-        calls,
-        (
-          token,
-          src.icrc84_withdraw({
-            to = { owner = dest_auction; subaccount = ?destSubaccount };
-            amount = acc.available;
-            token;
-            expected_fee = null;
-          }),
-          tradingPairs.getPairByLedger(token),
-        ),
-      );
-    };
-    for ((token, call, pair) in Vec.vals(calls)) {
-      try {
-        switch (await call) {
-          case (#Ok _) switch (pair) {
-            case (?p) p.base_credits := 0;
-            case (null) if (Principal.equal(token, qt)) {
-              for (p in tradingPairs.getPairs().vals()) {
-                p.quote_credits := 0;
-              };
-              tradingPairs.quoteReserve := 0;
-            };
-          };
-          case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
-        };
-      } catch (err) {
-        Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
-      };
-    };
-  };
-
-  public shared ({ caller }) func transfer_base_credits(receiver : Principal) : async Text {
-    await* assertAdminAccess(caller);
-    let auction : Auction.Self = actor (Principal.toText(auction_principal));
-    let destSubaccount = toSubaccount(receiver);
-    let qt = U.require(quote_token);
-
-    let credits = await auction.queryCredits();
-    for ((token, acc, _) in credits.vals()) {
-      if (not Principal.equal(token, qt)) {
+    try {
+      ignore await src.manageOrders(? #all(null), [], null);
+      let credits = await src.queryCredits();
+      for ((_, acc, _) in credits.vals()) {
         assert acc.locked == 0;
       };
-    };
-    let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
-    for ((token, acc, _) in credits.vals()) {
-      if (not Principal.equal(token, qt)) {
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      for ((token, acc, _) in credits.vals()) {
         Vec.add(
           calls,
           (
             token,
-            auction.icrc84_withdraw({
-              to = { owner = auction_principal; subaccount = ?destSubaccount };
+            src.icrc84_withdraw({
+              to = { owner = dest_auction; subaccount = ?destSubaccount };
               amount = acc.available;
               token;
               expected_fee = null;
@@ -405,17 +364,81 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
           ),
         );
       };
-    };
-    for ((token, call, pair) in Vec.vals(calls)) {
-      try {
-        switch (await call, pair) {
-          case (#Ok _, ?p) p.base_credits := 0;
-          case (#Err err, _) Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # debug_show err);
-          case (_) {};
+      for ((token, call, pair) in Vec.vals(calls)) {
+        try {
+          switch (await call) {
+            case (#Ok _) switch (pair) {
+              case (?p) p.base_credits := 0;
+              case (null) if (Principal.equal(token, qt)) {
+                for (p in tradingPairs.getPairs().vals()) {
+                  p.quote_credits := 0;
+                };
+                tradingPairs.quoteReserve := 0;
+              };
+            };
+            case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+          };
+        } catch (err) {
+          Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
         };
-      } catch (err) {
-        Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
       };
+    } catch (err) {
+      return Error.message(err);
+    } finally {
+      system_lock := false;
+    };
+    "Ok";
+  };
+
+  public shared ({ caller }) func transfer_base_credits(receiver : Principal) : async Text {
+    await* assertAdminAccess(caller);
+    assert not is_running;
+    assert not system_lock;
+    system_lock := true;
+    let auction : Auction.Self = actor (Principal.toText(auction_principal));
+    let destSubaccount = toSubaccount(receiver);
+    let qt = U.require(quote_token);
+
+    try {
+      let credits = await auction.queryCredits();
+      for ((token, acc, _) in credits.vals()) {
+        if (not Principal.equal(token, qt)) {
+          assert acc.locked == 0;
+        };
+      };
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      for ((token, acc, _) in credits.vals()) {
+        if (not Principal.equal(token, qt)) {
+          Vec.add(
+            calls,
+            (
+              token,
+              auction.icrc84_withdraw({
+                to = { owner = auction_principal; subaccount = ?destSubaccount };
+                amount = acc.available;
+                token;
+                expected_fee = null;
+              }),
+              tradingPairs.getPairByLedger(token),
+            ),
+          );
+        };
+      };
+      for ((token, call, pair) in Vec.vals(calls)) {
+        try {
+          switch (await call, pair) {
+            case (#Ok _, ?p) p.base_credits := 0;
+            case (#Err err, _) Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+            case (_) {};
+          };
+        } catch (err) {
+          Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+        };
+      };
+    } catch (err) {
+      return Error.message(err);
+    } finally {
+      system_lock := false;
     };
     "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
   };
@@ -441,6 +464,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   };
 
   func executeActivityBot_() : async* () {
+    assert not system_lock;
     assert not executionLock;
     executionLock := true;
     try {

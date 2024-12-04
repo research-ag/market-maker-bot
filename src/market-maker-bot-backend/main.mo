@@ -80,6 +80,9 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
   adminsMap.unshare(stableAdminsMap);
 
+  // a lock that prevents bot to run when set
+  var system_lock : Bool = false;
+
   let metrics = PT.PromTracker("", 65);
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
@@ -248,6 +251,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     });
   } {
     await* assertAdminAccess(caller);
+    assert not system_lock;
     Debug.print("Start bot");
 
     if (is_initialized == false) {
@@ -347,6 +351,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   func executeMarketMaking_() : async* () {
+    assert not system_lock;
     assert not executionLock;
     executionLock := true;
     try {
@@ -395,9 +400,11 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async () {
+  public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     await* assertAdminAccess(caller);
     assert not is_running;
+    assert not system_lock;
+    system_lock := true;
     let qt = U.require(quote_token);
     let src : Auction.Self = actor (Principal.toText(source_auction));
 
@@ -420,45 +427,52 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
-    ignore await src.manageOrders(? #all(null), [], null);
-    let credits = await src.queryCredits();
-    for ((_, acc, _) in credits.vals()) {
-      assert acc.locked == 0;
-    };
-    let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
-    for ((token, acc, _) in credits.vals()) {
-      Vec.add(
-        calls,
-        (
-          token,
-          src.icrc84_withdraw({
-            to = { owner = dest_auction; subaccount = ?destSubaccount };
-            amount = acc.available;
-            token;
-            expected_fee = null;
-          }),
-          tradingPairs.getPairByLedger(token),
-        ),
-      );
-    };
-    for ((token, call, pair) in Vec.vals(calls)) {
-      try {
-        switch (await call) {
-          case (#Ok _) switch (pair) {
-            case (?p) p.base_credits := 0;
-            case (null) if (Principal.equal(token, qt)) {
-              for (p in tradingPairs.getPairs().vals()) {
-                p.quote_credits := 0;
-              };
-              tradingPairs.quoteReserve := 0;
-            };
-          };
-          case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
-        };
-      } catch (err) {
-        Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+    try {
+      ignore await src.manageOrders(? #all(null), [], null);
+      let credits = await src.queryCredits();
+      for ((_, acc, _) in credits.vals()) {
+        assert acc.locked == 0;
       };
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      for ((token, acc, _) in credits.vals()) {
+        Vec.add(
+          calls,
+          (
+            token,
+            src.icrc84_withdraw({
+              to = { owner = dest_auction; subaccount = ?destSubaccount };
+              amount = acc.available;
+              token;
+              expected_fee = null;
+            }),
+            tradingPairs.getPairByLedger(token),
+          ),
+        );
+      };
+      for ((token, call, pair) in Vec.vals(calls)) {
+        try {
+          switch (await call) {
+            case (#Ok _) switch (pair) {
+              case (?p) p.base_credits := 0;
+              case (null) if (Principal.equal(token, qt)) {
+                for (p in tradingPairs.getPairs().vals()) {
+                  p.quote_credits := 0;
+                };
+                tradingPairs.quoteReserve := 0;
+              };
+            };
+            case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+          };
+        } catch (err) {
+          Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+        };
+      };
+    } catch (err) {
+      return Error.message(err);
+    } finally {
+      system_lock := false;
     };
+    "Ok";
   };
 
   func executeBot() : async () {
