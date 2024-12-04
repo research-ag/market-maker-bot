@@ -345,24 +345,25 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     try {
       ignore await src.manageOrders(? #all(null), [], null);
       let credits = await src.queryCredits();
-      for ((_, acc, _) in credits.vals()) {
-        assert acc.locked == 0;
-      };
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
-      for ((token, acc, _) in credits.vals()) {
-        Vec.add(
-          calls,
-          (
-            token,
-            src.icrc84_withdraw({
-              to = { owner = dest_auction; subaccount = ?destSubaccount };
-              amount = acc.available;
-              token;
-              expected_fee = null;
-            }),
-            tradingPairs.getPairByLedger(token),
-          ),
-        );
+      try {
+        for ((token, acc, _) in credits.vals()) {
+          Vec.add(
+            calls,
+            (
+              token,
+              src.icrc84_withdraw({
+                to = { owner = dest_auction; subaccount = ?destSubaccount };
+                amount = acc.available;
+                token;
+                expected_fee = null;
+              }),
+              tradingPairs.getPairByLedger(token),
+            ),
+          );
+        };
+      } catch (err) {
+        Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
       };
       for ((token, call, pair) in Vec.vals(calls)) {
         try {
@@ -401,28 +402,30 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
     try {
       let credits = await auction.queryCredits();
-      for ((token, acc, _) in credits.vals()) {
-        if (not Principal.equal(token, qt)) {
-          assert acc.locked == 0;
-        };
-      };
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
-      for ((token, acc, _) in credits.vals()) {
-        if (not Principal.equal(token, qt)) {
-          Vec.add(
-            calls,
-            (
-              token,
-              auction.icrc84_withdraw({
-                to = { owner = auction_principal; subaccount = ?destSubaccount };
-                amount = acc.available;
-                token;
-                expected_fee = null;
-              }),
-              tradingPairs.getPairByLedger(token),
-            ),
-          );
+      try {
+        for ((token, acc, _) in credits.vals()) {
+          if (not Principal.equal(token, qt)) {
+            Vec.add(
+              calls,
+              (
+                token,
+                auction.icrc84_withdraw({
+                  to = {
+                    owner = auction_principal;
+                    subaccount = ?destSubaccount;
+                  };
+                  amount = acc.available;
+                  token;
+                  expected_fee = null;
+                }),
+                tradingPairs.getPairByLedger(token),
+              ),
+            );
+          };
         };
+      } catch (err) {
+        Debug.print("transfer_base_credits scheduling calls error: " # Error.message(err));
       };
       for ((token, call, pair) in Vec.vals(calls)) {
         try {
