@@ -1,15 +1,15 @@
 import {Box, Option, Select, Table} from '@mui/joy';
 
 import {useGetHistory, useGetPairsList, useGetQuoteInfo} from '../../integration';
-import {HistoryItemType} from '../../declarations/market-maker-bot-backend/market-maker-bot-backend.did';
+import {HistoryItemTypeV3} from '../../declarations/market-maker-bot-backend/market-maker-bot-backend.did';
 import {displayWithDecimals} from '../../utils';
 import {useEffect, useState} from "react";
 
-const transformHistoryItem = (quoteDecimals: number, item: HistoryItemType) => {
+const transformHistoryItem = (quoteDecimals: number, item: HistoryItemTypeV3) => {
     const timestamp = new Date(Number(item.timestamp / 1000000n));
     const bidOrder = item.bidOrder && item.bidOrder.length ? item.bidOrder[0] : null;
     const askOrder = item.askOrder && item.askOrder.length ? item.askOrder[0] : null;
-    const spread = item.pair[0]?.spread_value || 'N/A';
+    const spread = item.pair[0] ? ('Value:' + item.pair[0].spread[0] + '; bias: ' + item.pair[0].spread[1]) : 'N/A';
     const baseToken = item.pair[0]?.base.symbol || 'N/A';
     const baseDecimals = item.pair[0]?.base.decimals || 0;
     const normalize_factor = quoteDecimals - baseDecimals;
@@ -64,7 +64,7 @@ export const OrdersHistory = () => {
                 <colgroup>
                     <col style={{width: '150px'}}/>
                     <col style={{width: '50px'}}/>
-                    <col style={{width: '50px'}}/>
+                    <col style={{width: '100px'}}/>
                     <col style={{width: '100px'}}/>
                     <col style={{width: '100px'}}/>
                     <col style={{width: '100px'}}/>

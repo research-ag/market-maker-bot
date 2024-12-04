@@ -37,15 +37,25 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   stable let auction_principal : Principal = auction_be_;
   stable let oracle_principal : Principal = oracle_be_;
 
-  stable var tradingPairsDataV1 : TPR.StableDataV1 = TPR.defaultStableDataV1();
-  stable var tradingPairsDataV2 : TPR.StableDataV2 = TPR.migrateStableDataV2(tradingPairsDataV1);
+  stable var tradingPairsDataV2 : TPR.StableDataV2 = TPR.defaultStableDataV2();
+  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.migrateStableDataV3(tradingPairsDataV2);
 
-  stable let historyV2 : Vec.Vector<HistoryModule.HistoryItemType> = Vec.new();
+  stable let historyV2 : Vec.Vector<HistoryModule.HistoryItemTypeV2> = Vec.new();
+  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.map<HistoryModule.HistoryItemTypeV2, HistoryModule.HistoryItemTypeV3>(
+    historyV2,
+    func(x) : HistoryModule.HistoryItemTypeV3 = {
+      x with
+      pair = switch (x.pair) {
+        case (?p) (?{ p with spread = (p.spread_value, 0.0) });
+        case (null) null;
+      };
+    },
+  );
 
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_spread_value : Float = 0.05;
+  let default_spread : (value : Float, bias : Float) = (0.05, 0.0);
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -102,8 +112,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     try {
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      tradingPairs.unshare(tradingPairsDataV2);
-      let (qp, sp) = await* tradingPairs.initTokens(auction, default_spread_value);
+      tradingPairs.unshare(tradingPairsDataV3);
+      let (qp, sp) = await* tradingPairs.initTokens(auction, default_spread);
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
@@ -111,7 +121,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-        ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread_value * 10000)));
+        ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
+        ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
       };
       is_initializing := false;
       is_initialized := true;
@@ -142,7 +153,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   system func preupgrade() {
     Debug.print("Preupgrade");
     if (is_initialized) {
-      tradingPairsDataV2 := tradingPairs.share();
+      tradingPairsDataV3 := tradingPairs.share();
     };
     stableAdminsMap := adminsMap.share();
   };
@@ -186,7 +197,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
-    Vec.add(historyV2, historyItem);
+    Vec.add(historyV3, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -214,10 +225,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     );
   };
 
-  public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemType]) {
-    var iter = Vec.valsRev<HistoryModule.HistoryItemType>(historyV2);
+  public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV3]) {
+    var iter = Vec.valsRev<HistoryModule.HistoryItemTypeV3>(historyV3);
     switch (token) {
-      case (?t) iter := Iter.filter<HistoryModule.HistoryItemType>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
+      case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV3>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
     };
     U.sliceIter(iter, limit, skip);
@@ -298,12 +309,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     };
   };
 
-  public shared ({ caller }) func setSpreadValue(baseSymbol : Text, spreadValue : Float) : async () {
+  public shared ({ caller }) func setSpread(baseSymbol : Text, spreadValue : Float, spreadBias : Float) : async () {
     await* assertAdminAccess(caller);
     switch (tradingPairs.getPair(baseSymbol)) {
       case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
       case (?p) {
-        p.spread_value := spreadValue;
+        p.spread := (spreadValue, spreadBias);
       };
     };
   };
@@ -332,6 +343,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   public shared ({ caller }) func executeMarketMaking() : async () {
     await* assertAdminAccess(caller);
+    await* executeMarketMaking_();
+  };
+
+  func executeMarketMaking_() : async* () {
     assert not executionLock;
     executionLock := true;
     try {
@@ -451,7 +466,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       return;
     };
 
-    await executeMarketMaking();
+    await* executeMarketMaking_();
   };
 
   func runTimer<system>() : () {
