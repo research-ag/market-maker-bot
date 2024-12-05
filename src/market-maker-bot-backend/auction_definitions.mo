@@ -38,7 +38,7 @@ module {
   };
   public type OrderId = Nat;
   public type ManageOrdersResult = { #Ok : [OrderId]; #Err : ManageOrdersError };
-  type WithdrawResult = {
+  public type WithdrawResult = {
     #Ok : {
       txid : Nat;
       amount : Nat;

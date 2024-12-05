@@ -13,6 +13,7 @@ import List "mo:base/List";
 import Option "mo:base/Option";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
+import Array "mo:base/Array";
 
 import Vec "mo:vector";
 
@@ -118,21 +119,30 @@ module {
       };
     };
 
-    public func notify(token : Principal) : async* {
-      #Ok;
-      #Err;
-    } {
-      try {
-        let response = await ac.icrc84_notify({ token });
-
-        switch (response) {
-          case (#Ok(_)) #Ok;
-          case (#Err(_)) #Err;
-        };
-      } catch (e) {
-        Debug.print(Error.message(e));
-        #Err;
+    public func notify(tokens : [Principal]) : async* [{ #Ok; #Err }] {
+      let calls : [var ?(async Auction.NotifyResult)] = Array.init(tokens.size(), null);
+      for (i in tokens.keys()) {
+        calls[i] := ?ac.icrc84_notify({ token = tokens[i] });
       };
+      let res : [var { #Ok; #Err }] = Array.init(tokens.size(), #Err);
+      for (i in calls.keys()) {
+        res[i] := switch (calls[i]) {
+          case (null) #Err;
+          case (?call) {
+            try {
+              let response = await call;
+              switch (response) {
+                case (#Ok(_)) #Ok;
+                case (#Err(_)) #Err;
+              };
+            } catch (e) {
+              Debug.print(Error.message(e));
+              #Err;
+            };
+          };
+        };
+      };
+      Array.freeze(res);
     };
   };
 };
