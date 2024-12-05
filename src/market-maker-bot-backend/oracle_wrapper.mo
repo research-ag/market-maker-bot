@@ -33,7 +33,7 @@ module {
 
     let metalPriceApiOracle : (
       actor {
-        queryRates : ([Text]) -> async [(Text, ?{ apiTimestamp : Nat; value : Float })];
+        queryRates : ([Text]) -> async [(Text, ?{ timestamp : Nat; value : Float })];
       }
     ) = actor ("k2ic6-3yaaa-aaaao-a3u6a-cai");
 
@@ -56,7 +56,7 @@ module {
       var neutriniteCall : ?(async [((Nat, Nat), Text, Float)]) = null;
 
       let metalPriceSymbolPairs : Vec.Vector<(i : Nat, localSymbol : Text, remoteSymbol : Text)> = Vec.new();
-      var metalPriceCall : ?(async [(Text, ?{ apiTimestamp : Nat; value : Float })]) = null;
+      var metalPriceCall : ?(async [(Text, ?{ timestamp : Nat; value : Float })]) = null;
 
       // fill call info and schedule all cross-canister calls at once
       for (i in baseSymbols.keys()) {
@@ -179,9 +179,9 @@ module {
             for (((i, localSymbol, remoteSymbol), idx) in Vec.items(metalPriceSymbolPairs)) {
               res[i] := switch (results[idx].1) {
                 case (null) #Err(#ErrorGetRates("Metal Price API did not provide key " # remoteSymbol));
-                case (?{ value; apiTimestamp }) {
-                  if (apiTimestamp < minSyncTimestamp) {
-                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # Nat.toText(apiTimestamp)));
+                case (?{ value; timestamp }) {
+                  if (timestamp < minSyncTimestamp) {
+                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # Nat.toText(timestamp)));
                   } else {
                     if (localSymbol == "GLDT") {
                       #Ok(value / 3110.35);
