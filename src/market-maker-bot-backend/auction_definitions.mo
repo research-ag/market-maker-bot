@@ -37,7 +37,11 @@ module {
     };
   };
   public type OrderId = Nat;
-  public type ManageOrdersResult = { #Ok : [OrderId]; #Err : ManageOrdersError };
+  public type CancellationResult = (OrderId, assetId : Principal, volume : Nat, price : Float);
+  public type ManageOrdersResult = {
+    #Ok : ([CancellationResult], [OrderId]);
+    #Err : ManageOrdersError;
+  };
   public type WithdrawResult = {
     #Ok : {
       txid : Nat;

@@ -81,7 +81,7 @@ module {
     };
 
     public func replaceOrders(orders : [(token : Principal, bid : OrderInfo, ask : OrderInfo)], sessionNumber : ?Nat) : async* {
-      #Ok : [Nat];
+      #Ok : ([Auction.CancellationResult], [Auction.OrderId]);
       #Err : Auction.ManageOrdersError;
     } {
       let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
