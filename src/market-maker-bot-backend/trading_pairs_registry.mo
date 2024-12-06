@@ -140,7 +140,6 @@ module TradingPairsRegistry {
                 };
                 var base_credits = 0;
                 var quote_credits = 0;
-                var locked_quote_credits = 0;
                 var strategy = default_strategy;
               };
 
