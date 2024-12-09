@@ -11,6 +11,7 @@ import Bool "mo:base/Bool";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
+import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
@@ -88,6 +89,34 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
   ignore metrics.addPullValue("quote_reserve", "", tradingPairs.getQuoteReserve);
 
+  var tradingPairStrategyMetrics : Vec.Vector<[(PT.PullValue, PT.PullValue, PT.PullValue)]> = Vec.new();
+  func updateTradingPairsMetrics() {
+    // remove existing metrics
+    for (v in Vec.vals(tradingPairStrategyMetrics)) {
+      for (x in v.vals()) {
+        x.0.remove();
+        x.1.remove();
+        x.2.remove();
+      };
+    };
+    tradingPairStrategyMetrics := Vec.new();
+    // register metrics
+    let pairs = tradingPairs.getPairs();
+    for (i in pairs.keys()) {
+      let pair = func() : MarketMaker.MarketPair = tradingPairs.getPairs()[i];
+      let lbl = func(index : Nat) : Text = "base=\"" # pair().base.symbol # "\",index=\"" # Nat.toText(index) # "\"";
+      let mtr = Array.tabulate<(PT.PullValue, PT.PullValue, PT.PullValue)>(
+        pairs[i].strategy.size(),
+        func(j) = (
+          metrics.addPullValue("spread_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(0.5 + _.strategy[j].0.0 * 10000))),
+          metrics.addPullValue("spread_base_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(0.5 + (1.0 + _.strategy[j].0.1) * 10000))),
+          metrics.addPullValue("spread_weight_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(_.strategy[j].1 * 10000))),
+        ),
+      );
+      Vec.add(tradingPairStrategyMetrics, mtr);
+    };
+  };
+
   func getState() : (BotState) {
     {
       timer_interval = bot_timer_interval;
@@ -123,9 +152,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-        // ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
-        // ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
       };
+      updateTradingPairsMetrics();
       is_initializing := false;
       is_initialized := true;
       #Ok(getState());
@@ -327,6 +355,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         p.strategy := strategy;
       };
     };
+    updateTradingPairsMetrics();
   };
 
   public query func queryQuoteReserve() : async Nat = async tradingPairs.getQuoteReserve();
