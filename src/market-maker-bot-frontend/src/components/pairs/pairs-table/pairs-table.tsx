@@ -55,9 +55,10 @@ export const PairsTable = () => {
                   <InfoItem content={`Decimals ${pair.base.decimals}`}/>
                 </td>
                 <td>
-                  <InfoItem content={'Value: ' + pair.spread[0] + '; bias: ' + pair.spread[1]} withEdit={isAdmin} onEdit={() => {
-                    setSelectedItem(pair);
-                    setTimeout(() => setIsSettingsModalOpen(true), 50);
+                  <InfoItem content={pair.strategy.map(s => s[1] + ': Value: ' + s[0][0] + '; bias: ' + s[0][1]).join('\n')}
+                            withEdit={isAdmin} onEdit={() => {
+                      setSelectedItem(pair);
+                      setTimeout(() => setIsSettingsModalOpen(true), 50);
                   }}/>
                 </td>
                 <td>

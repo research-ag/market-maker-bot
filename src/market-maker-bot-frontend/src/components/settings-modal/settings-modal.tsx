@@ -1,15 +1,18 @@
 import {useEffect, useMemo, useState} from 'react';
-import {Controller, SubmitHandler, useForm, useFormState} from 'react-hook-form';
+import {SubmitHandler, useFieldArray, useForm, useFormState} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z as zod} from 'zod';
-import {Box, Button, FormControl, FormLabel, Input, Modal, ModalClose, ModalDialog, Typography,} from '@mui/joy';
+import {Box, Button, FormControl, FormLabel, Input, Modal, ModalClose, ModalDialog, Typography} from '@mui/joy';
 import {useUpdateTradingPairSettings} from "../../integration";
 import {ErrorAlert} from "../error-alert";
 import {MarketPairShared} from "../../declarations/market-maker-bot-backend/market-maker-bot-backend.did";
 
 interface SettingsFormValues {
-    spread: number;
-    spreadBias: number;
+    strategy: {
+        spread: string;
+        spreadBias: string;
+        weight: string;
+    }[];
 }
 
 interface SettingsModalProps {
@@ -19,51 +22,78 @@ interface SettingsModalProps {
 }
 
 const schema = zod.object({
-    spread: zod
-        .string()
-        .refine(value => !isNaN(Number(value)) && Number(value) > 0 && Number(value) <= 1),
-    spreadBias: zod
-        .string()
-        .refine(value => !isNaN(Number(value)) && Number(value) >= -1 && Number(value) <= 1),
+    strategy: zod.array(
+        zod.object({
+            spread: zod
+                .string()
+                .refine((value) => !isNaN(Number(value)) && Number(value) > 0 && Number(value) <= 1, {
+                    message: "Spread must be a number between 0 and 1.",
+                }),
+            spreadBias: zod
+                .string()
+                .refine((value) => !isNaN(Number(value)) && Number(value) >= -1 && Number(value) <= 1, {
+                    message: "Spread bias must be a number between -1 and 1.",
+                }),
+            weight: zod.string().refine((value) => !isNaN(Number(value)) && Number(value) > 0, {
+                message: "Weight must be a positive number.",
+            }),
+        })
+    ),
 });
 
 const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
-    const defaultValues: SettingsFormValues = useMemo(
-        () => ({spread: pair.spread?.[0] || 0.05, spreadBias: pair.spread?.[1] || 0.0}),
-        [],
-    );
+    const defaultValues: SettingsFormValues = useMemo(() => {
+        if (pair?.strategy) {
+            return {
+                strategy: pair.strategy.map(([[spread, spreadBias], weight]) => ({
+                    spread: spread.toString(),
+                    spreadBias: spreadBias.toString(),
+                    weight: weight.toString(),
+                })),
+            };
+        }
+        return {
+            strategy: [
+                {
+                    spread: "0.05",
+                    spreadBias: "0.0",
+                    weight: "1.0",
+                },
+            ],
+        };
+    }, [pair]);
 
-    const {
-        handleSubmit,
-        control,
-        reset: resetForm,
-        watch,
-    } = useForm<SettingsFormValues>({
+    const {handleSubmit, control, reset: resetForm, watch} = useForm<SettingsFormValues>({
         defaultValues,
         resolver: zodResolver(schema),
-        mode: 'onChange',
+        mode: "onChange",
+    });
+
+    const {fields: strategyFields, remove: removeStrategy, append: appendStrategy} = useFieldArray({
+        control,
+        name: "strategy",
     });
 
     const {isDirty, isValid} = useFormState({control});
     const {mutate: update, error, isLoading, reset: resetApi} = useUpdateTradingPairSettings();
 
-    const [pricePrediction, setPricePrediction] = useState<[number, number]>([0, 0]);
+    const [pricePrediction, setPricePrediction] = useState<[number, number, number][]>([]);
+
     useEffect(() => {
-        const {unsubscribe} = watch((v) => {
-            setPricePrediction([
-                1 + (v.spreadBias ? +v.spreadBias : 0) + (v.spread ? +v.spread : 0),
-                1 + (v.spreadBias ? +v.spreadBias : 0) - (v.spread ? +v.spread : 0),
-            ])
+        const subscription = watch((values) => {
+            setPricePrediction(
+                values.strategy?.map((v) => [
+                    1 + (v?.spreadBias ? +v.spreadBias : 0) + (v?.spread ? +v.spread : 0),
+                    1 + (v?.spreadBias ? +v.spreadBias : 0) - (v?.spread ? +v.spread : 0),
+                    v?.weight ? +v.weight : 0,
+                ]) || []
+            );
         });
-        return () => unsubscribe();
+        return () => subscription.unsubscribe();
     }, [watch]);
 
-    const submit: SubmitHandler<SettingsFormValues> = ({spread, spreadBias}) => {
-        update({baseSymbol: pair.base.symbol, spreadValue: +spread, spreadBias: +spreadBias}, {
-            onSuccess: () => {
-                onClose();
-            },
-        });
+    const submit: SubmitHandler<SettingsFormValues> = ({strategy}) => {
+        update({baseSymbol: pair.base.symbol, strategy}, {onSuccess: () => onClose()});
     };
 
     useEffect(() => {
@@ -73,78 +103,85 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
 
     return (
         <Modal open={isOpen} onClose={onClose}>
-            <ModalDialog sx={{width: 'calc(100% - 50px)', maxWidth: '450px'}}>
+            <ModalDialog sx={{width: "calc(100% - 50px)", maxWidth: "450px"}}>
                 <ModalClose/>
                 <Typography level="h4">Update {pair.base.symbol} settings</Typography>
-                <div style={{display: 'contents'}}>
-                    <form onSubmit={handleSubmit(submit)} autoComplete="off">
-                        <Box sx={{display: 'flex', flexDirection: 'column', gap: 1}}>
-                            <Controller
-                                name="spread"
-                                control={control}
-                                render={({field, fieldState}) => (
-                                    <FormControl>
-                                        <FormLabel>Spread value</FormLabel>
-                                        <Input
-                                            type="number"
-                                            variant="outlined"
-                                            name={field.name}
-                                            value={field.value}
-                                            onChange={field.onChange}
-                                            slotProps={{
-                                                input: {
-                                                    min: 0,
-                                                    max: 1,
-                                                    step: 0.0001,
-                                                },
-                                            }}
-                                            autoComplete="off"
-                                            error={!!fieldState.error}
-                                        />
-                                    </FormControl>
-                                )}/>
-                            <Controller
-                                name="spreadBias"
-                                control={control}
-                                render={({field, fieldState}) => (
-                                    <FormControl>
-                                        <FormLabel>Spread bias</FormLabel>
-                                        <Input
-                                            type="number"
-                                            variant="outlined"
-                                            name={field.name}
-                                            value={field.value}
-                                            onChange={field.onChange}
-                                            slotProps={{
-                                                input: {
-                                                    min: -1,
-                                                    max: 1,
-                                                    step: 0.0001,
-                                                },
-                                            }}
-                                            autoComplete="off"
-                                            error={!!fieldState.error}
-                                        />
-                                    </FormControl>
-                                )}/>
-                        </Box>
-                        {!!error && <ErrorAlert errorMessage={(error as Error).message}/>}
-                        <Typography level="body-xs">
-                            Ask price: <b>rate * {pricePrediction[0].toFixed(4)}</b>
-                            <br/>
-                            Bid price: <b>rate * {pricePrediction[1].toFixed(4)}</b>
-                            <br/>
-                        </Typography>
+                <form onSubmit={handleSubmit(submit)} autoComplete="off">
+                    <Box sx={{display: "flex", flexDirection: "column", gap: 2}}>
+                        {strategyFields.map((field, index) => (
+                            <div key={field.id} style={{display: "flex", flexDirection: "column", gap: 1}}>
+                                <FormControl>
+                                    <FormLabel>Spread</FormLabel>
+                                    <Input
+                                        type="number"
+                                        {...control.register(`strategy.${index}.spread`)}
+                                        error={!!error}
+                                        slotProps={{
+                                            input: {min: 0, max: 1, step: 0.0001},
+                                        }}
+                                    />
+                                </FormControl>
+                                <FormControl>
+                                    <FormLabel>Spread Bias</FormLabel>
+                                    <Input
+                                        type="number"
+                                        {...control.register(`strategy.${index}.spreadBias`)}
+                                        error={!!error}
+                                        slotProps={{
+                                            input: {min: -1, max: 1, step: 0.0001},
+                                        }}
+                                    />
+                                </FormControl>
+                                <FormControl>
+                                    <FormLabel>Weight</FormLabel>
+                                    <Input
+                                        type="number"
+                                        {...control.register(`strategy.${index}.weight`)}
+                                        error={!!error}
+                                        slotProps={{
+                                            input: {min: 0.01, step: 0.01},
+                                        }}
+                                    />
+                                </FormControl>
+                                <Button variant="soft" color="danger" onClick={() => removeStrategy(index)}>
+                                    Remove
+                                </Button>
+                            </div>
+                        ))}
                         <Button
-                            sx={{marginTop: 2}}
-                            variant="solid"
-                            loading={isLoading}
-                            type="submit"
-                            disabled={!isValid || !isDirty}>
-                            Update
+                            variant="soft"
+                            color="primary"
+                            onClick={() =>
+                                appendStrategy({
+                                    spread: "0.05",
+                                    spreadBias: "0.0",
+                                    weight: "1.0",
+                                })
+                            }
+                        >
+                            Add Strategy
                         </Button>
-                    </form>
-                </div>
+                    </Box>
+                    {!!error && <ErrorAlert errorMessage={(error as Error).message}/>}
+                    <Typography level="body-xs">
+                        {pricePrediction.map((p, i) => (
+                            <p key={i}>
+                                Ask price: <b>rate * {p[0].toFixed(4)}</b> | Bid price: <b>rate
+                                * {p[1].toFixed(4)}</b> | Volume:{" "}
+                                <b>balance * {p[2].toFixed(4)}</b>
+                            </p>
+                        ))}
+                    </Typography>
+                    <Button
+                        sx={{marginTop: 2}}
+                        variant="solid"
+                        loading={isLoading}
+                        type="submit"
+                        disabled={!isValid || !isDirty}
+                    >
+                        Update
+                    </Button>
+                </form>
             </ModalDialog>
         </Modal>
     );

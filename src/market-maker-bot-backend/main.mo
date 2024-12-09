@@ -11,7 +11,6 @@ import Bool "mo:base/Bool";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
-import Int "mo:base/Int";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
 import Nat8 "mo:base/Nat8";
@@ -37,16 +36,16 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   stable let auction_principal : Principal = auction_be_;
   stable let oracle_principal : Principal = oracle_be_;
 
-  stable var tradingPairsDataV2 : TPR.StableDataV2 = TPR.defaultStableDataV2();
-  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.migrateStableDataV3(tradingPairsDataV2);
+  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
+  stable var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
 
-  stable let historyV2 : Vec.Vector<HistoryModule.HistoryItemTypeV2> = Vec.new();
-  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.map<HistoryModule.HistoryItemTypeV2, HistoryModule.HistoryItemTypeV3>(
-    historyV2,
-    func(x) : HistoryModule.HistoryItemTypeV3 = {
+  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
+  stable let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
+    historyV3,
+    func(x) : HistoryModule.HistoryItemTypeV4 = {
       x with
       pair = switch (x.pair) {
-        case (?p) (?{ p with spread = (p.spread_value, 0.0) });
+        case (?p) (?{ p with strategy = [(p.spread, 1.0)] });
         case (null) null;
       };
     },
@@ -55,7 +54,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_strategy : MarketMaker.MarketPairStrategy = [(1.0, (0.05, 0.0))];
+  let default_strategy : MarketMaker.MarketPairStrategy = [((0.05, 0.0), 1.0)];
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -115,7 +114,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     try {
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      tradingPairs.unshare(tradingPairsDataV3);
+      tradingPairs.unshare(tradingPairsDataV4);
       let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
@@ -124,8 +123,8 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-        ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
-        ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
+        // ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
+        // ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
       };
       is_initializing := false;
       is_initialized := true;
@@ -156,7 +155,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   system func preupgrade() {
     Debug.print("Preupgrade");
     if (is_initialized) {
-      tradingPairsDataV3 := tradingPairs.share();
+      tradingPairsDataV4 := tradingPairs.share();
     };
     stableAdminsMap := adminsMap.share();
   };
@@ -200,7 +199,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
-    Vec.add(historyV3, historyItem);
+    Vec.add(historyV4, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -319,7 +318,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       case (null) throw Error.reject("Base token with symbol \"" # baseSymbol # "\" not found");
       case (?p) {
         var totalWeight : Float = 0;
-        for ((w, _) in strategy.vals()) {
+        for ((_, w) in strategy.vals()) {
           totalWeight += w;
           if (totalWeight > 1) {
             throw Error.reject("Strategy weights have to sum up to value less or equal than 1.0");

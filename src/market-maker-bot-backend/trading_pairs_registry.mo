@@ -15,8 +15,37 @@ import U "./utils";
 
 module TradingPairsRegistry {
 
-  public type StableDataV3 = {
+  public type StableDataV4 = {
     registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
+    quoteReserve : Nat;
+    synchronizedTransactions : Nat;
+  };
+
+  public func defaultStableDataV4() : StableDataV4 = {
+    registry = null;
+    quoteReserve = 0;
+    synchronizedTransactions = 0;
+  };
+
+  public func migrateStableDataV4(data : StableDataV3) : StableDataV4 = {
+    registry = List.map<(Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread : (value : Float, bias : Float) }), (Text, MarketMaker.MarketPair)>(
+      data.registry,
+      func(t, x) = (
+        t,
+        {
+          base = x.base;
+          var base_credits = x.base_credits;
+          var quote_credits = x.quote_credits;
+          var strategy = [(x.spread, 1.0)];
+        },
+      ),
+    );
+    quoteReserve = data.quoteReserve;
+    synchronizedTransactions = data.synchronizedTransactions;
+  };
+
+  public type StableDataV3 = {
+    registry : AssocList.AssocList<Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread : (value : Float, bias : Float) }>;
     quoteReserve : Nat;
     synchronizedTransactions : Nat;
   };
@@ -25,51 +54,6 @@ module TradingPairsRegistry {
     registry = null;
     quoteReserve = 0;
     synchronizedTransactions = 0;
-  };
-
-  public func migrateStableDataV3(data : StableDataV2) : StableDataV3 = {
-    registry = List.map<(Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread_value : Float }), (Text, MarketMaker.MarketPair)>(
-      data.registry,
-      func(t, x) = (
-        t,
-        {
-          base = x.base;
-          var base_credits = x.base_credits;
-          var quote_credits = x.quote_credits;
-          var spread = (x.spread_value, 0.0);
-        },
-      ),
-    );
-    quoteReserve = data.quoteReserve;
-    synchronizedTransactions = 0;
-  };
-
-  public type StableDataV2 = {
-    registry : AssocList.AssocList<Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread_value : Float }>;
-    quoteReserve : Nat;
-    synchronizedTransactions : Nat;
-  };
-
-  public func defaultStableDataV2() : StableDataV2 = {
-    registry = null;
-    quoteReserve = 0;
-    synchronizedTransactions = 0;
-  };
-
-  public func migrateStableDataV2(data : StableDataV1) : StableDataV2 = {
-    registry = data.registry;
-    quoteReserve = data.quoteReserve;
-    synchronizedTransactions = 0;
-  };
-
-  public type StableDataV1 = {
-    registry : AssocList.AssocList<Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread_value : Float }>;
-    quoteReserve : Nat;
-  };
-
-  public func defaultStableDataV1() : StableDataV1 = {
-    registry = null;
-    quoteReserve = 0;
   };
 
   public class TradingPairsRegistry() {
@@ -260,11 +244,11 @@ module TradingPairsRegistry {
       sessionNumber;
     };
 
-    public func share() : StableDataV3 {
+    public func share() : StableDataV4 {
       { registry; quoteReserve; synchronizedTransactions };
     };
 
-    public func unshare(data : StableDataV3) {
+    public func unshare(data : StableDataV4) {
       registry := data.registry;
       quoteReserve := data.quoteReserve;
       synchronizedTransactions := data.synchronizedTransactions;

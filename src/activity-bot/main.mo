@@ -39,16 +39,16 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     case (_) Prim.trap("Oracle principal not provided");
   };
 
-  stable var tradingPairsDataV2 : TPR.StableDataV2 = TPR.defaultStableDataV2();
-  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.migrateStableDataV3(tradingPairsDataV2);
+  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
+  stable var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
 
-  stable let history : Vec.Vector<HistoryModule.HistoryItemTypeV2> = Vec.new();
-  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.map<HistoryModule.HistoryItemTypeV2, HistoryModule.HistoryItemTypeV3>(
-    history,
-    func(x) : HistoryModule.HistoryItemTypeV3 = {
+  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
+  stable let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
+    historyV3,
+    func(x) : HistoryModule.HistoryItemTypeV4 = {
       x with
       pair = switch (x.pair) {
-        case (?p) (?{ p with spread = (p.spread_value, 0.0) });
+        case (?p) (?{ p with strategy = [(p.spread, 1.0)] });
         case (null) null;
       };
     },
@@ -57,7 +57,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_strategy : MarketMaker.MarketPairStrategy = [(1.0, (0.1, 0.0))];
+  let default_strategy : MarketMaker.MarketPairStrategy = [((0.1, 0.0), 1.0)];
 
   var bot_timer : Timer.TimerId = 0;
 
@@ -118,16 +118,16 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     try {
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      tradingPairs.unshare(tradingPairsDataV3);
-      let (qp, sp) = await* tradingPairs.initTokens(auction, default_spread);
+      tradingPairs.unshare(tradingPairsDataV4);
+      let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
         let labels = "base=\"" # pair.base.symbol # "\"";
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
-        ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
-        ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
+        // ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.spread.0 * 10000)));
+        // ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.spread.1) * 10000)));
       };
       is_initializing := false;
       is_initialized := true;
@@ -158,7 +158,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
   system func preupgrade() {
     Debug.print("Preupgrade");
     if (is_initialized) {
-      tradingPairsDataV3 := tradingPairs.share();
+      tradingPairsDataV4 := tradingPairs.share();
     };
     stableAdminsMap := adminsMap.share();
   };
@@ -202,7 +202,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, rate, message);
-    Vec.add(historyV3, historyItem);
+    Vec.add(historyV4, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
