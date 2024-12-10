@@ -114,10 +114,10 @@ module MarketMaker {
     ac : AuctionWrapper.Self,
     sessionNumber : Nat,
   ) : async* {
-    #Ok : [(OrderInfo, OrderInfo, Float)];
+    #Ok : [(bids : [OrderInfo], asks : [OrderInfo], Float)];
     #Err : (U.ExecutionError, ?MarketPairShared, ?OrderInfo, ?OrderInfo, ?Float);
   } {
-    let replaceArgs : Vec.Vector<(token : Principal, bid : OrderInfo, ask : OrderInfo)> = Vec.new();
+    let replaceArgs : Vec.Vector<(token : Principal, bids : [OrderInfo], asks : [OrderInfo])> = Vec.new();
 
     for (i in pairs.keys()) {
       let pair = pairs[i];
@@ -125,53 +125,55 @@ module MarketMaker {
       // the order to the smallest units of the tokens
       let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote.decimals) - Int32.fromNat32(pair.base.decimals);
 
-      // todo strategies
-      let { bid_price; ask_price } = getPrices(pair.strategy[0].0, rates[i], price_decimals_multiplicator);
-      let { bid_volume; ask_volume } = getVolumes({ base_credit = pair.base_credits; quote_credit = pair.quote_credits }, { bid_price; ask_price });
+      func creditPart(credit : Nat, weight : Float) : Nat = (Float.fromInt(credit) * weight) |> Int.abs(Float.toInt(_));
 
-      Vec.add(
-        replaceArgs,
-        (
-          pair.base.principal,
+      let bids = Array.init<OrderInfo>(pair.strategy.size(), { amount = 0; price = 0 });
+      let asks = Array.init<OrderInfo>(pair.strategy.size(), { amount = 0; price = 0 });
+
+      for (j in pair.strategy.keys()) {
+        let (spread, weight) = pair.strategy[j];
+        let { bid_price; ask_price } = getPrices(spread, rates[i], price_decimals_multiplicator);
+        let { bid_volume; ask_volume } = getVolumes(
           {
-            amount = bid_volume;
-            price = bid_price;
+            base_credit = creditPart(pair.base_credits, weight);
+            quote_credit = creditPart(pair.quote_credits, weight);
           },
-          {
-            amount = ask_volume;
-            price = ask_price;
-          },
-        ),
-      );
+          { bid_price; ask_price },
+        );
+        bids[j] := { amount = bid_volume; price = bid_price };
+        asks[j] := { amount = ask_volume; price = ask_price };
+      };
+      Vec.add(replaceArgs, (pair.base.principal, Array.freeze(bids), Array.freeze(asks)));
     };
 
     let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?sessionNumber);
 
     switch (replace_orders_result) {
       case (#Ok _) {
-        Array.tabulate<(OrderInfo, OrderInfo, Float)>(
+        Array.tabulate<([OrderInfo], [OrderInfo], Float)>(
           pairs.size(),
           func(i) = (Vec.get(replaceArgs, i).1, Vec.get(replaceArgs, i).2, rates[i]),
         ) |> #Ok(_);
       };
-      case (#Err(err)) {
+      case (#Err(argIndex, failedOrder, err)) {
         switch (err) {
           case (#placement(err)) {
-            let pair = sharePair(pairs[err.index]);
-            let (_, bid_order, ask_order) = Vec.get(replaceArgs, err.index);
-            let current_rate = rates[err.index];
+            let pair = sharePair(pairs[U.require(argIndex)]);
+            let current_rate = rates[U.require(argIndex)];
+            let (ask, bid) = switch (U.require(failedOrder)) {
+              case (#ask(x)) (?x, null);
+              case (#bid(x)) (null, ?x);
+            };
             switch (err.error) {
-              case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?pair, ?bid_order, ?ask_order, ?current_rate);
-              case (#UnknownAsset) #Err(#UnknownAssetError, ?pair, ?bid_order, ?ask_order, ?current_rate);
-              case (#NoCredit) #Err(#NoCreditError, ?pair, ?bid_order, ?ask_order, ?current_rate);
-              case (#TooLowOrder) #Err(#TooLowOrderError, ?pair, ?bid_order, ?ask_order, ?current_rate);
-              case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?pair, ?bid_order, ?ask_order, ?current_rate);
-              case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?pair, ?bid_order, ?ask_order, ?current_rate);
+              case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?pair, bid, ask, ?current_rate);
+              case (#UnknownAsset) #Err(#UnknownAssetError, ?pair, bid, ask, ?current_rate);
+              case (#NoCredit) #Err(#NoCreditError, ?pair, bid, ask, ?current_rate);
+              case (#TooLowOrder) #Err(#TooLowOrderError, ?pair, bid, ask, ?current_rate);
+              case (#VolumeStepViolated x) #Err(#VolumeStepViolated(x), ?pair, bid, ask, ?current_rate);
+              case (#PriceDigitsOverflow x) #Err(#PriceDigitsOverflow(x), ?pair, bid, ask, ?current_rate);
             };
           };
-          case (#cancellation(err)) {
-            #Err(#CancellationError, null, null, null, null);
-          };
+          case (#cancellation(err)) #Err(#CancellationError, null, null, null, null);
           case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), null, null, null, null);
           case (#UnknownPrincipal) #Err(#UnknownPrincipal, null, null, null, null);
           case (#UnknownError x) #Err(#UnknownError(x), null, null, null, null);

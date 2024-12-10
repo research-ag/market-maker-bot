@@ -422,8 +422,16 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       switch (execute_result) {
         case (#Ok results) {
           for (i in results.keys()) {
-            let (bid_order, ask_order, rate) = results[i];
-            addHistoryItem(?MarketMaker.sharePair(Vec.get(pairsToProcess, i)), ?bid_order, ?ask_order, ?rate, "OK");
+            let (bids, asks, rate) = results[i];
+            for (j in Iter.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
+              addHistoryItem(
+                ?MarketMaker.sharePair(Vec.get(pairsToProcess, i)),
+                if (j < bids.size()) { ?bids[j] } else { null },
+                if (j < asks.size()) { ?asks[j] } else { null },
+                ?rate,
+                "OK",
+              );
+            };
           };
         };
         case (#Err(err, market_pair, bid_order, ask_order, rate)) {

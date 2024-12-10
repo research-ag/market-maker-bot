@@ -18,6 +18,7 @@ import Array "mo:base/Array";
 import Vec "mo:vector";
 
 import Auction "./auction_definitions";
+import U "./utils";
 
 module {
   public type OrderInfo = {
@@ -80,23 +81,40 @@ module {
       (map, Option.get(sessionNumber, 0));
     };
 
-    public func replaceOrders(orders : [(token : Principal, bid : OrderInfo, ask : OrderInfo)], sessionNumber : ?Nat) : async* {
+    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], sessionNumber : ?Nat) : async* {
       #Ok : ([Auction.CancellationResult], [Auction.OrderId]);
-      #Err : Auction.ManageOrdersError;
+      #Err : (argIndex : ?Nat, order : ?{ #ask : OrderInfo; #bid : OrderInfo }, error : Auction.ManageOrdersError);
     } {
       let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
-      for ((token, bid, ask) in orders.vals()) {
-        if (ask.amount > 0) {
-          Vec.add(placements, #ask(token, ask.amount, ask.price));
+      for ((token, bids, asks) in orders.vals()) {
+        for (ask in asks.vals()) {
+          if (ask.amount > 0) {
+            Vec.add(placements, #ask(token, ask.amount, ask.price));
+          };
         };
-        if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
-          Vec.add(placements, #bid(token, bid.amount, bid.price));
+        for (bid in bids.vals()) {
+          if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
+            Vec.add(placements, #bid(token, bid.amount, bid.price));
+          };
         };
       };
       try {
-        await ac.manageOrders(?(#all(null)), Vec.toArray(placements), sessionNumber);
+        let res = await ac.manageOrders(?(#all(null)), Vec.toArray(placements), sessionNumber);
+        switch (res) {
+          case (#Ok x) #Ok(x);
+          case (#Err err) switch (err) {
+            case (#placement(e)) {
+              let argIndex = func(token : Principal) : Nat = U.require(Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>((token, [], []), orders, func(a, b) = a.0 == b.0));
+              switch (Vec.get(placements, e.index)) {
+                case (#ask(token, amount, price)) #Err(?argIndex(token), ? #ask({ amount; price }), err);
+                case (#bid(token, amount, price)) #Err(?argIndex(token), ? #bid({ amount; price }), err);
+              };
+            };
+            case (x) #Err((null, null, x));
+          };
+        };
       } catch (err) {
-        #Err(#UnknownError(Error.message(err)));
+        #Err(null, null, #UnknownError(Error.message(err)));
       };
     };
 

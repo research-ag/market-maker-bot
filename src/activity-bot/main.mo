@@ -501,7 +501,6 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         // calculate multiplicator which help to normalize the price before create
         // the order to the smallest units of the tokens
         let price_decimals_multiplicator : Int32 = Int32.fromNat32(quote_token.decimals) - Int32.fromNat32(pair.base.decimals);
-        // todo strategies
         // get ask price, because in activity bot we want to place higher bid values
         let { ask_price = price } = MarketMaker.getPrices(pair.strategy[0].0, U.requireUpperOk(rates[i]), price_decimals_multiplicator);
         // bid minimum volume
@@ -520,9 +519,9 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       };
 
       let replace_orders_result = await* auction.replaceOrders(
-        Array.tabulate<(Principal, MarketMaker.OrderInfo, MarketMaker.OrderInfo)>(
+        Array.tabulate<(Principal, [MarketMaker.OrderInfo], [MarketMaker.OrderInfo])>(
           Vec.size(placements),
-          func(i) = Vec.get(placements, i) |> (_.0.base.principal, _.1, { amount = 0; price = 0 }),
+          func(i) = Vec.get(placements, i) |> (_.0.base.principal, [_.1], []),
         ),
         null,
       );
@@ -533,20 +532,22 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
             addHistoryItem(?MarketMaker.sharePair(p.0), ?p.1, ?p.2, "OK");
           };
         };
-        case (#Err(err)) {
+        case (#Err(argIndex, failedOrder, err)) {
           switch (err) {
             case (#placement(err)) {
-              let (p, b, r) = Vec.get(placements, err.index);
-              let pair = ?MarketMaker.sharePair(p);
-              let bid_order = ?b;
-              let rate = ?r;
+              let pair = MarketMaker.sharePair(pairs[U.require(argIndex)]);
+              let current_rate = U.requireUpperOk(rates[U.require(argIndex)]);
+              let bid = switch (U.require(failedOrder)) {
+                case (#ask(x)) Prim.trap("");
+                case (#bid(x)) ?x;
+              };
               switch (err.error) {
-                case (#ConflictingOrder(_)) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#ConflictOrderError));
-                case (#UnknownAsset) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#UnknownAssetError));
-                case (#NoCredit) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#NoCreditError));
-                case (#TooLowOrder) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#TooLowOrderError));
-                case (#VolumeStepViolated x) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#VolumeStepViolated(x)));
-                case (#PriceDigitsOverflow x) addHistoryItem(pair, bid_order, rate, U.getErrorMessage(#PriceDigitsOverflow(x)));
+                case (#ConflictingOrder(_)) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#ConflictOrderError));
+                case (#UnknownAsset) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#UnknownAssetError));
+                case (#NoCredit) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#NoCreditError));
+                case (#TooLowOrder) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#TooLowOrderError));
+                case (#VolumeStepViolated x) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#VolumeStepViolated(x)));
+                case (#PriceDigitsOverflow x) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#PriceDigitsOverflow(x)));
               };
             };
             case (#cancellation(err)) addHistoryItem(null, null, null, U.getErrorMessage(#CancellationError));
