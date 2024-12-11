@@ -55,11 +55,19 @@ export const PairsTable = () => {
                   <InfoItem content={`Decimals ${pair.base.decimals}`}/>
                 </td>
                 <td>
-                  <InfoItem content={pair.strategy.map(s => s[1] + ': Value: ' + s[0][0] + '; bias: ' + s[0][1]).join('\n')}
-                            withEdit={isAdmin} onEdit={() => {
-                      setSelectedItem(pair);
-                      setTimeout(() => setIsSettingsModalOpen(true), 50);
-                  }}/>
+                  {pair.strategy.length > 0
+                      ? pair.strategy.map((s, i) =>
+                          <InfoItem content={s[1] + ': Value: ' + s[0][0] + '; bias:' + s[0][1]}
+                                    withEdit={isAdmin && i === 0} onEdit={() => {
+                            setSelectedItem(pair);
+                            setTimeout(() => setIsSettingsModalOpen(true), 50);
+                          }}/>)
+                      : <InfoItem content="Not set"
+                                  withEdit={isAdmin} onEdit={() => {
+                        setSelectedItem(pair);
+                        setTimeout(() => setIsSettingsModalOpen(true), 50);
+                      }}/>
+                  }
                 </td>
                 <td>
                   <InfoItem content={'' + (Number(pair.quote_credits) / Math.pow(10, quoteInfo?.decimals || 0))}

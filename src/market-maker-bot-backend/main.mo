@@ -255,10 +255,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     );
   };
 
-  public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV3]) {
-    var iter = Vec.valsRev<HistoryModule.HistoryItemTypeV3>(historyV3);
+  public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV4]) {
+    var iter = Vec.valsRev<HistoryModule.HistoryItemTypeV4>(historyV4);
     switch (token) {
-      case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV3>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
+      case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV4>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
     };
     U.sliceIter(iter, limit, skip);

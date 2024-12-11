@@ -103,10 +103,10 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
 
     return (
         <Modal open={isOpen} onClose={onClose}>
-            <ModalDialog sx={{width: "calc(100% - 50px)", maxWidth: "450px"}}>
+            <ModalDialog sx={{width: "calc(100% - 50px)", maxWidth: "650px", maxHeight: '80%'}}>
                 <ModalClose/>
                 <Typography level="h4">Update {pair.base.symbol} settings</Typography>
-                <form onSubmit={handleSubmit(submit)} autoComplete="off">
+                <form onSubmit={handleSubmit(submit)} autoComplete="off" style={{overflowY: 'auto'}}>
                     <Box sx={{display: "flex", flexDirection: "column", gap: 2}}>
                         {strategyFields.map((field, index) => (
                             <div key={field.id} style={{display: "flex", flexDirection: "column", gap: 1}}>
@@ -143,7 +143,8 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
                                         }}
                                     />
                                 </FormControl>
-                                <Button variant="soft" color="danger" onClick={() => removeStrategy(index)}>
+                                <Button variant="soft" color="danger" sx={{marginTop: 2}}
+                                        onClick={() => removeStrategy(index)}>
                                     Remove
                                 </Button>
                             </div>
