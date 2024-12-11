@@ -83,7 +83,10 @@ module {
 
     public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], sessionNumber : ?Nat) : async* {
       #Ok : ([Auction.CancellationResult], [Auction.OrderId]);
-      #Err : (argIndex : ?Nat, order : ?{ #ask : OrderInfo; #bid : OrderInfo }, error : Auction.ManageOrdersError);
+      #Err : {
+        #cancellation : Auction.ManageOrdersCancellationError;
+        #placement : (argIndex : Nat, failedAsk : ?OrderInfo, failedBid : ?OrderInfo, error : Auction.ManageOrdersPlacementError);
+      } or Auction.ManageOrdersOtherError;
     } {
       let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
       for ((token, bids, asks) in orders.vals()) {
@@ -106,16 +109,17 @@ module {
             case (#placement(e)) {
               let argIndex = func(token : Principal) : Nat = U.require(Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>((token, [], []), orders, func(a, b) = a.0 == b.0));
               switch (Vec.get(placements, e.index)) {
-                case (#ask(token, amount, price)) #Err(?argIndex(token), ? #ask({ amount; price }), err);
-                case (#bid(token, amount, price)) #Err(?argIndex(token), ? #bid({ amount; price }), err);
+                case (#ask(token, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
+                case (#bid(token, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
               };
             };
-            case (x) #Err((null, null, x));
+            case (#cancellation(e)) #Err(#cancellation(e));
+            case (#SessionNumberMismatch(x)) #Err(#SessionNumberMismatch(x));
+            case (#UnknownPrincipal(x)) #Err(#UnknownPrincipal(x));
+            case (#UnknownError(x)) #Err(#UnknownError(x));
           };
         };
-      } catch (err) {
-        #Err(null, null, #UnknownError(Error.message(err)));
-      };
+      } catch (err) #Err(#UnknownError(Error.message(err)));
     };
 
     public func removeOrders() : async* {

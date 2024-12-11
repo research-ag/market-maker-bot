@@ -6,29 +6,33 @@
 
 module {
   public type CreditInfo = { total : Nat; locked : Nat; available : Nat };
-  public type ManageOrdersError = {
+  public type ManageOrdersCancellationError = {
+    index : Nat;
+    error : {
+      #UnknownAsset;
+      #UnknownOrder;
+    };
+  };
+  public type ManageOrdersPlacementError = {
+    index : Nat;
+    error : {
+      #ConflictingOrder : ({ #ask; #bid }, ?OrderId);
+      #NoCredit;
+      #TooLowOrder;
+      #UnknownAsset;
+      #PriceDigitsOverflow : { maxDigits : Nat };
+      #VolumeStepViolated : { baseVolumeStep : Nat };
+    };
+  };
+  public type ManageOrdersOtherError = {
     #SessionNumberMismatch : Principal;
     #UnknownPrincipal;
-    #cancellation : {
-      index : Nat;
-      error : {
-        #UnknownAsset;
-        #UnknownOrder;
-      };
-    };
-    #placement : {
-      index : Nat;
-      error : {
-        #ConflictingOrder : ({ #ask; #bid }, ?OrderId);
-        #NoCredit;
-        #TooLowOrder;
-        #UnknownAsset;
-        #PriceDigitsOverflow : { maxDigits : Nat };
-        #VolumeStepViolated : { baseVolumeStep : Nat };
-      };
-    };
     #UnknownError : Text;
   };
+  public type ManageOrdersError = {
+    #cancellation : ManageOrdersCancellationError;
+    #placement : ManageOrdersPlacementError;
+  } or ManageOrdersOtherError;
   public type NotifyResult = {
     #Ok : { credit_inc : Nat; credit : Int; deposit_inc : Nat };
     #Err : {

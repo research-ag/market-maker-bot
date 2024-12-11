@@ -33,7 +33,7 @@ export const PairsTable = () => {
         <thead>
         <tr>
           <th>Base Token</th>
-          <th>Spread</th>
+          <th>Spread strategy</th>
           <th>Quote balance</th>
           <th>Base balance</th>
         </tr>

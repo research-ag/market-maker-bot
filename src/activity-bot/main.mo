@@ -532,16 +532,12 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
             addHistoryItem(?MarketMaker.sharePair(p.0), ?p.1, ?p.2, "OK");
           };
         };
-        case (#Err(argIndex, failedOrder, err)) {
+        case (#Err(err)) {
           switch (err) {
-            case (#placement(err)) {
-              let pair = MarketMaker.sharePair(pairs[U.require(argIndex)]);
-              let current_rate = U.requireUpperOk(rates[U.require(argIndex)]);
-              let bid = switch (U.require(failedOrder)) {
-                case (#ask(x)) Prim.trap("");
-                case (#bid(x)) ?x;
-              };
-              switch (err.error) {
+            case (#placement(argIndex, _, bid, e)) {
+              let pair = MarketMaker.sharePair(pairs[argIndex]);
+              let current_rate = U.requireUpperOk(rates[argIndex]);
+              switch (e.error) {
                 case (#ConflictingOrder(_)) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#ConflictOrderError));
                 case (#UnknownAsset) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#UnknownAssetError));
                 case (#NoCredit) addHistoryItem(?pair, bid, ?current_rate, U.getErrorMessage(#NoCreditError));

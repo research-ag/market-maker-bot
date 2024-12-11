@@ -155,16 +155,12 @@ module MarketMaker {
           func(i) = (Vec.get(replaceArgs, i).1, Vec.get(replaceArgs, i).2, rates[i]),
         ) |> #Ok(_);
       };
-      case (#Err(argIndex, failedOrder, err)) {
+      case (#Err(err)) {
         switch (err) {
-          case (#placement(err)) {
-            let pair = sharePair(pairs[U.require(argIndex)]);
-            let current_rate = rates[U.require(argIndex)];
-            let (ask, bid) = switch (U.require(failedOrder)) {
-              case (#ask(x)) (?x, null);
-              case (#bid(x)) (null, ?x);
-            };
-            switch (err.error) {
+          case (#placement(argIndex, ask, bid, e)) {
+            let pair = sharePair(pairs[argIndex]);
+            let current_rate = rates[argIndex];
+            switch (e.error) {
               case (#ConflictingOrder(_)) #Err(#ConflictOrderError, ?pair, bid, ask, ?current_rate);
               case (#UnknownAsset) #Err(#UnknownAssetError, ?pair, bid, ask, ?current_rate);
               case (#NoCredit) #Err(#NoCreditError, ?pair, bid, ask, ?current_rate);
