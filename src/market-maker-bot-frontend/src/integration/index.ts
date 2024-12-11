@@ -155,11 +155,17 @@ export const useUpdateTradingPairSettings = () => {
     const queryClient = useQueryClient();
     const {enqueueSnackbar} = useSnackbar();
     return useMutation(
-        ({baseSymbol, spreadValue, spreadBias}: {
+        ({baseSymbol, strategy}: {
             baseSymbol: string,
-            spreadValue: number,
-            spreadBias: number
-        }) => bot.setSpread(baseSymbol, spreadValue, spreadBias),
+            strategy: {
+                spread: string,
+                spreadBias: string,
+                weight: string,
+            }[]
+        }) => bot.updatePriceStrategy(
+            baseSymbol,
+            strategy.map(({spread, spreadBias, weight}) => [[+spread, +spreadBias], +weight])
+        ),
         {
             onSuccess: () => {
                 queryClient.invalidateQueries('getPairsList');

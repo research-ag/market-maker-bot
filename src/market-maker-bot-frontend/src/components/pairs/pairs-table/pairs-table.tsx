@@ -33,7 +33,7 @@ export const PairsTable = () => {
         <thead>
         <tr>
           <th>Base Token</th>
-          <th>Spread</th>
+          <th>Spread strategy</th>
           <th>Quote balance</th>
           <th>Base balance</th>
         </tr>
@@ -55,10 +55,19 @@ export const PairsTable = () => {
                   <InfoItem content={`Decimals ${pair.base.decimals}`}/>
                 </td>
                 <td>
-                  <InfoItem content={'Value: ' + pair.spread[0] + '; bias: ' + pair.spread[1]} withEdit={isAdmin} onEdit={() => {
-                    setSelectedItem(pair);
-                    setTimeout(() => setIsSettingsModalOpen(true), 50);
-                  }}/>
+                  {pair.strategy.length > 0
+                      ? pair.strategy.map((s, i) =>
+                          <InfoItem content={s[1] + ': Value: ' + s[0][0] + '; bias:' + s[0][1]}
+                                    withEdit={isAdmin && i === 0} onEdit={() => {
+                            setSelectedItem(pair);
+                            setTimeout(() => setIsSettingsModalOpen(true), 50);
+                          }}/>)
+                      : <InfoItem content="Not set"
+                                  withEdit={isAdmin} onEdit={() => {
+                        setSelectedItem(pair);
+                        setTimeout(() => setIsSettingsModalOpen(true), 50);
+                      }}/>
+                  }
                 </td>
                 <td>
                   <InfoItem content={'' + (Number(pair.quote_credits) / Math.pow(10, quoteInfo?.decimals || 0))}

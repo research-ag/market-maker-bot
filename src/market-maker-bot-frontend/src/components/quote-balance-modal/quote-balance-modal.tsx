@@ -63,46 +63,44 @@ const QuoteBalanceModal = ({pair, isOpen, onClose}: ModalProps) => {
             <ModalDialog sx={{width: 'calc(100% - 50px)', maxWidth: '450px'}}>
                 <ModalClose/>
                 <Typography level="h4">Update {pair.base.symbol} quote balance</Typography>
-                <div style={{display: 'contents'}}>
-                    <form onSubmit={handleSubmit(submit)} autoComplete="off">
-                        <Box sx={{display: 'flex', flexDirection: 'column', gap: 1}}>
-                            <Typography level="body-xs">
-                                Note: quote asset uses {quoteInfo?.decimals || 0} decimals
-                            </Typography>
-                            <Controller
-                                name="balance"
-                                control={control}
-                                render={({field, fieldState}) => (
-                                    <FormControl>
-                                        <FormLabel>Balance</FormLabel>
-                                        <Input
-                                            type="number"
-                                            variant="outlined"
-                                            name={field.name}
-                                            value={field.value}
-                                            slotProps={{
-                                                input: {
-                                                    step: 1 / Math.pow(10, quoteInfo?.decimals || 6),
-                                                },
-                                            }}
-                                            onChange={field.onChange}
-                                            autoComplete="off"
-                                            error={!!fieldState.error}
-                                        />
-                                    </FormControl>
-                                )}/>
-                        </Box>
-                        {!!error && <ErrorAlert errorMessage={(error as Error).message}/>}
-                        <Button
-                            sx={{marginTop: 2}}
-                            variant="solid"
-                            loading={isLoading}
-                            type="submit"
-                            disabled={!isValid || !isDirty}>
-                            Update
-                        </Button>
-                    </form>
-                </div>
+                <form onSubmit={handleSubmit(submit)} autoComplete="off">
+                    <Box sx={{display: 'flex', flexDirection: 'column', gap: 1}}>
+                        <Typography level="body-xs">
+                            Note: quote asset uses {quoteInfo?.decimals || 0} decimals
+                        </Typography>
+                        <Controller
+                            name="balance"
+                            control={control}
+                            render={({field, fieldState}) => (
+                                <FormControl>
+                                    <FormLabel>Balance</FormLabel>
+                                    <Input
+                                        type="number"
+                                        variant="outlined"
+                                        name={field.name}
+                                        value={field.value}
+                                        slotProps={{
+                                            input: {
+                                                step: 1 / Math.pow(10, quoteInfo?.decimals || 6),
+                                            },
+                                        }}
+                                        onChange={field.onChange}
+                                        autoComplete="off"
+                                        error={!!fieldState.error}
+                                    />
+                                </FormControl>
+                            )}/>
+                    </Box>
+                    {!!error && <ErrorAlert errorMessage={(error as Error).message}/>}
+                    <Button
+                        sx={{marginTop: 2}}
+                        variant="solid"
+                        loading={isLoading}
+                        type="submit"
+                        disabled={!isValid || !isDirty}>
+                        Update
+                    </Button>
+                </form>
             </ModalDialog>
         </Modal>
     );
