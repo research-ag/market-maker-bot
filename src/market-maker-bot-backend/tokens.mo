@@ -25,6 +25,7 @@ module {
       (Principal.fromText("um5iw-rqaaa-aaaaq-qaaba-cai"), { symbol = "TCYCLES"; decimals = 12 }),
       (Principal.fromText("6c7su-kiaaa-aaaar-qaira-cai"), { symbol = "GLDT"; decimals = 8 }),
       (Principal.fromText("lkwrt-vyaaa-aaaaq-aadhq-cai"), { symbol = "OGY"; decimals = 8 }),
+      (Principal.fromText("pe5t5-diaaa-aaaar-qahwa-cai"), { symbol = "EURC"; decimals = 6 }),
     ];
 
     List.fromArray(symbolsArray);
