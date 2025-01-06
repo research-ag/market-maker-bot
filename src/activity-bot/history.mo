@@ -12,21 +12,21 @@ import Int "mo:base/Int";
 import MarketMakerModule "../market-maker-bot-backend/market_maker";
 
 module HistoryModule {
-  public type HistoryItemTypeV2 = {
+  public type HistoryItemTypeV4 = {
     timestamp : Time.Time;
-    pair : ?{
-      base : MarketMakerModule.TokenDescription;
-      base_credits : Nat;
-      quote_credits : Nat;
-      spread_value : Float;
-    };
+    pair : ?MarketMakerModule.MarketPairShared;
     bidOrder : ?MarketMakerModule.OrderInfo;
     rate : ?Float;
     message : Text;
   };
   public type HistoryItemTypeV3 = {
     timestamp : Time.Time;
-    pair : ?MarketMakerModule.MarketPairShared;
+    pair : ?{
+      base : MarketMakerModule.TokenDescription;
+      base_credits : Nat;
+      quote_credits : Nat;
+      spread : (value : Float, bias : Float);
+    };
     bidOrder : ?MarketMakerModule.OrderInfo;
     rate : ?Float;
     message : Text;
@@ -37,7 +37,7 @@ module HistoryModule {
     bidOrder : ?MarketMakerModule.OrderInfo,
     rate : ?Float,
     message : Text,
-  ) : HistoryItemTypeV3 = ({
+  ) : HistoryItemTypeV4 = ({
     timestamp = Time.now();
     pair;
     bidOrder;
@@ -45,7 +45,7 @@ module HistoryModule {
     message;
   });
 
-  public func getText(item : HistoryItemTypeV3) : Text {
+  public func getText(item : HistoryItemTypeV4) : Text {
     Text.join(
       "",
       [
