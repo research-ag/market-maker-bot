@@ -16,11 +16,19 @@
     "activity-bot-backend": {
       "main": "src/activity-bot/main.mo",
       "type": "motoko",
-      "init_arg": "(opt principal \"3gvau-pyaaa-aaaao-qa7kq-cai\", opt principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")"
+      "init_arg": "(opt principal \"3gvau-pyaaa-aaaao-qa7kq-cai\", opt principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")",
+      "declarations": {
+        "bindings": [
+          "js",
+          "ts"
+        ],
+        "output": "./src/declarations/activity-bot-backend"
+      }
     },
     "market-maker-bot-frontend": {
       "dependencies": [
-        "market-maker-bot-backend"
+        "market-maker-bot-backend",
+        "activity-bot-backend"
       ],
       "source": [
         "src/market-maker-bot-frontend/dist"

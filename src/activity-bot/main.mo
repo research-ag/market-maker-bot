@@ -343,7 +343,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
     try {
-      ignore await src.manageOrders(? #all(null), [], null);
+      ignore await src.manageOrders(?#all(null), [], null);
       let credits = await src.queryCredits();
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
@@ -444,6 +444,12 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       system_lock := false;
     };
     "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
+  };
+
+  public shared func notifyQuote() : async () {
+    ignore await* auction.notify([U.require(quote_token)]);
+    ignore await* tradingPairs.replayTransactionHistory(auction);
+    ignore await* tradingPairs.refreshCredits(auction);
   };
 
   public shared ({ caller }) func notify(token : ?Principal) : async () {
