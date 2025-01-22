@@ -63,7 +63,28 @@ module {
     price : Float;
     volume : Nat;
   };
-  public type TransactionHistoryItem = (timestamp : Nat64, sessionNumber : Nat, kind : { #ask; #bid }, ledgerPrincipal : Principal, volume : Nat, price : Float);
+  type PriceHistoryItem = (timestamp : Nat64, sessionNumber : Nat, ledgerPrincipal : Principal, volume : Nat, price : Float);
+  type DepositHistoryItem = (timestamp : Nat64, kind : { #deposit; #withdrawal; #withdrawalRollback }, ledgerPrincipal : Principal, volume : Nat);
+  type TransactionHistoryItem = (timestamp : Nat64, sessionNumber : Nat, kind : { #ask; #bid }, ledgerPrincipal : Principal, volume : Nat, price : Float);
+  public type AuctionQueryArgs = {
+    session_numbers : ?[Principal];
+    asks : ?[Principal];
+    bids : ?[Principal];
+    credits : ?[Principal];
+    deposit_history : ?(tokens : [Principal], limit : Nat, skip : Nat);
+    transaction_history : ?(tokens : [Principal], limit : Nat, skip : Nat);
+    price_history : ?(tokens : [Principal], limit : Nat, skip : Nat, skipEmpty : Bool);
+  };
+  public type AuctionQueryResponse = {
+    session_numbers : [(Principal, Nat)];
+    asks : [(OrderId, Order)];
+    bids : [(OrderId, Order)];
+    credits : [(Principal, CreditInfo)];
+    deposit_history : [DepositHistoryItem];
+    transaction_history : [TransactionHistoryItem];
+    price_history : [PriceHistoryItem];
+    points : Nat;
+  };
   public type Self = actor {
     icrc84_notify : shared { token : Principal } -> async NotifyResult;
     manageOrders : shared (
@@ -74,8 +95,7 @@ module {
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
       ?Nat,
     ) -> async ManageOrdersResult;
-    queryCredit : shared query (Principal) -> async (CreditInfo, Nat);
-    queryCredits : shared query () -> async [(Principal, CreditInfo, Nat)];
+    auction_query : shared query (AuctionQueryArgs) -> async AuctionQueryResponse;
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
     icrc84_withdraw : ({

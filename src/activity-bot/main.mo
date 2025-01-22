@@ -343,11 +343,19 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
     try {
-      ignore await src.manageOrders(? #all(null), [], null);
-      let credits = await src.queryCredits();
+      ignore await src.manageOrders(?#all(null), [], null);
+      let { credits } = await src.auction_query({
+        session_numbers = null;
+        asks = null;
+        bids = null;
+        credits = ?[];
+        deposit_history = null;
+        transaction_history = null;
+        price_history = null;
+      });
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
-        for ((token, acc, _) in credits.vals()) {
+        for ((token, acc) in credits.vals()) {
           Vec.add(
             calls,
             (
@@ -401,10 +409,18 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     let qt = U.require(quote_token);
 
     try {
-      let credits = await auction.queryCredits();
+      let { credits } = await auction.auction_query({
+        session_numbers = null;
+        asks = null;
+        bids = null;
+        credits = ?[];
+        deposit_history = null;
+        transaction_history = null;
+        price_history = null;
+      });
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
-        for ((token, acc, _) in credits.vals()) {
+        for ((token, acc) in credits.vals()) {
           if (not Principal.equal(token, qt)) {
             Vec.add(
               calls,
