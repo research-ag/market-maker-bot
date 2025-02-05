@@ -58,7 +58,10 @@ module {
         [token],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      credits[0].1.total;
+      switch (credits.size()) {
+        case (0) 0;
+        case (_) credits[0].1.total;
+      };
     };
 
     // returns total credits (available + locked)
