@@ -56,15 +56,7 @@ module {
     public func getCredit(token : Principal) : async* Nat {
       let { credits } = await ac.auction_query(
         [token],
-        {
-          session_numbers = null;
-          asks = null;
-          bids = null;
-          credits = ?true;
-          deposit_history = null;
-          transaction_history = null;
-          price_history = null;
-        },
+        { Auction.EMPTY_QUERY with credits = ?true },
       );
       credits[0].1.total;
     };
@@ -76,15 +68,7 @@ module {
       try {
         let { session_numbers; credits } = await ac.auction_query(
           [],
-          {
-            session_numbers = ?true;
-            asks = null;
-            bids = null;
-            credits = ?true;
-            deposit_history = null;
-            transaction_history = null;
-            price_history = null;
-          },
+          { Auction.EMPTY_QUERY with session_numbers = ?true; credits = ?true },
         );
         for ((p, sn) in session_numbers.vals()) {
           switch (sessionNumber) {

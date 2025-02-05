@@ -75,6 +75,15 @@ module {
     transaction_history : ?(limit : Nat, skip : Nat);
     price_history : ?(limit : Nat, skip : Nat, skipEmpty : Bool);
   };
+  public let EMPTY_QUERY : AuctionQuerySelection = {
+    session_numbers = null;
+    asks = null;
+    bids = null;
+    credits = null;
+    deposit_history = null;
+    transaction_history = null;
+    price_history = null;
+  };
   public type AuctionQueryResponse = {
     session_numbers : [(Principal, Nat)];
     asks : [(OrderId, Order)];

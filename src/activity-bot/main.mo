@@ -346,15 +346,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
       ignore await src.manageOrders(?#all(null), [], null);
       let { credits } = await src.auction_query(
         [],
-        {
-          session_numbers = null;
-          asks = null;
-          bids = null;
-          credits = ?true;
-          deposit_history = null;
-          transaction_history = null;
-          price_history = null;
-        },
+        { Auction.EMPTY_QUERY with credits = ?true },
       );
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
@@ -414,15 +406,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     try {
       let { credits } = await auction.auction_query(
         [],
-        {
-          session_numbers = null;
-          asks = null;
-          bids = null;
-          credits = ?true;
-          deposit_history = null;
-          transaction_history = null;
-          price_history = null;
-        },
+        { Auction.EMPTY_QUERY with credits = ?true },
       );
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
