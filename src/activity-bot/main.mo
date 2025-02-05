@@ -468,6 +468,12 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     "Base credits transferred to user: " # debug_show receiver # ". Make sure to call \"notify\" on their behalf";
   };
 
+  public shared func notifyQuote() : async () {
+    ignore await* auction.notify([U.require(quote_token)]);
+    ignore await* tradingPairs.replayTransactionHistory(auction);
+    ignore await* tradingPairs.refreshCredits(auction);
+  };
+
   public shared ({ caller }) func notify(token : ?Principal) : async () {
     await* assertAdminAccess(caller);
     switch (token) {

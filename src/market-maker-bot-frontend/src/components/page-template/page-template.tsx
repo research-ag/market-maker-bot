@@ -6,9 +6,16 @@ interface PageTemplateProps {
   title: string;
   addButtonTitle?: string;
   onAddButtonClick?: () => void;
+  addButtonDisabled?: boolean;
 }
 
-export const PageTemplate = ({ children, title, addButtonTitle, onAddButtonClick }: PageTemplateProps) => {
+export const PageTemplate = ({
+                               children,
+                               title,
+                               addButtonTitle,
+                               onAddButtonClick,
+                               addButtonDisabled
+                             }: PageTemplateProps) => {
   return (
     <Sheet
       sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 'sm', boxShadow: 'md' }}
@@ -18,7 +25,8 @@ export const PageTemplate = ({ children, title, addButtonTitle, onAddButtonClick
       <Box sx={{ display: 'flex', alignItems: 'center' }}>
         <Typography level="h1">{title}</Typography>
         {addButtonTitle && (
-          <Button sx={{ marginLeft: 'auto' }} variant="solid" startDecorator={<Add />} onClick={onAddButtonClick}>
+          <Button sx={{ marginLeft: 'auto' }} variant="solid" disabled={!!addButtonDisabled}
+                  startDecorator={<Add/>} onClick={onAddButtonClick}>
             {addButtonTitle}
           </Button>
         )}
