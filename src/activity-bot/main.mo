@@ -344,15 +344,18 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
 
     try {
       ignore await src.manageOrders(?#all(null), [], null);
-      let { credits } = await src.auction_query({
-        session_numbers = null;
-        asks = null;
-        bids = null;
-        credits = ?[];
-        deposit_history = null;
-        transaction_history = null;
-        price_history = null;
-      });
+      let { credits } = await src.auction_query(
+        [],
+        {
+          session_numbers = null;
+          asks = null;
+          bids = null;
+          credits = ?true;
+          deposit_history = null;
+          transaction_history = null;
+          price_history = null;
+        },
+      );
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {
@@ -409,15 +412,18 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     let qt = U.require(quote_token);
 
     try {
-      let { credits } = await auction.auction_query({
-        session_numbers = null;
-        asks = null;
-        bids = null;
-        credits = ?[];
-        deposit_history = null;
-        transaction_history = null;
-        price_history = null;
-      });
+      let { credits } = await auction.auction_query(
+        [],
+        {
+          session_numbers = null;
+          asks = null;
+          bids = null;
+          credits = ?true;
+          deposit_history = null;
+          transaction_history = null;
+          price_history = null;
+        },
+      );
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {

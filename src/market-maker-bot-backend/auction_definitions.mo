@@ -66,14 +66,14 @@ module {
   type PriceHistoryItem = (timestamp : Nat64, sessionNumber : Nat, ledgerPrincipal : Principal, volume : Nat, price : Float);
   type DepositHistoryItem = (timestamp : Nat64, kind : { #deposit; #withdrawal; #withdrawalRollback }, ledgerPrincipal : Principal, volume : Nat);
   type TransactionHistoryItem = (timestamp : Nat64, sessionNumber : Nat, kind : { #ask; #bid }, ledgerPrincipal : Principal, volume : Nat, price : Float);
-  public type AuctionQueryArgs = {
-    session_numbers : ?[Principal];
-    asks : ?[Principal];
-    bids : ?[Principal];
-    credits : ?[Principal];
-    deposit_history : ?(tokens : [Principal], limit : Nat, skip : Nat);
-    transaction_history : ?(tokens : [Principal], limit : Nat, skip : Nat);
-    price_history : ?(tokens : [Principal], limit : Nat, skip : Nat, skipEmpty : Bool);
+  public type AuctionQuerySelection = {
+    session_numbers : ?Bool;
+    asks : ?Bool;
+    bids : ?Bool;
+    credits : ?Bool;
+    deposit_history : ?(limit : Nat, skip : Nat);
+    transaction_history : ?(limit : Nat, skip : Nat);
+    price_history : ?(limit : Nat, skip : Nat, skipEmpty : Bool);
   };
   public type AuctionQueryResponse = {
     session_numbers : [(Principal, Nat)];
@@ -95,7 +95,7 @@ module {
       [{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }],
       ?Nat,
     ) -> async ManageOrdersResult;
-    auction_query : shared query (AuctionQueryArgs) -> async AuctionQueryResponse;
+    auction_query : shared query (tokens : [Principal], selection : AuctionQuerySelection) -> async AuctionQueryResponse;
     getQuoteLedger : shared query () -> async (Principal);
     icrc84_supported_tokens : () -> async ([Principal]);
     icrc84_withdraw : ({
