@@ -471,11 +471,14 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
     try {
-      ignore await src.manageOrders(? #all(null), [], null);
-      let credits = await src.queryCredits();
+      ignore await src.manageOrders(?#all(null), [], null);
+      let { credits } = await src.auction_query(
+        [],
+        { Auction.EMPTY_QUERY with credits = ?true },
+      );
       let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
       try {
-        for ((token, acc, _) in credits.vals()) {
+        for ((token, acc) in credits.vals()) {
           Vec.add(
             calls,
             (

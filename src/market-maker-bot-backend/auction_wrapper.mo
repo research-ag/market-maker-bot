@@ -54,8 +54,14 @@ module {
 
     // returns total credit (available + locked)
     public func getCredit(token : Principal) : async* Nat {
-      let (credit, _) = await ac.queryCredit(token);
-      credit.total;
+      let { credits } = await ac.auction_query(
+        [token],
+        { Auction.EMPTY_QUERY with credits = ?true },
+      );
+      switch (credits.size()) {
+        case (0) 0;
+        case (_) credits[0].1.total;
+      };
     };
 
     // returns total credits (available + locked)
@@ -63,16 +69,19 @@ module {
       var map : List.List<(Principal, Nat)> = null;
       var sessionNumber : ?Nat = null;
       try {
-        let credits : [(Principal, Auction.CreditInfo, Nat)] = await ac.queryCredits();
-
+        let { session_numbers; credits } = await ac.auction_query(
+          [],
+          { Auction.EMPTY_QUERY with session_numbers = ?true; credits = ?true },
+        );
+        for ((p, sn) in session_numbers.vals()) {
+          switch (sessionNumber) {
+            case (?s) assert sn == s;
+            case (null) sessionNumber := ?sn;
+          };
+        };
         Debug.print("Credits " # debug_show (credits));
-
         for (credit in credits.vals()) {
           map := List.push<(Principal, Nat)>((credit.0, credit.1.total), map);
-          switch (sessionNumber) {
-            case (?sn) assert credit.2 == sn;
-            case (null) sessionNumber := ?credit.2;
-          };
         };
       } catch (e) {
         Debug.print(Error.message(e));
