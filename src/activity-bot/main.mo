@@ -333,6 +333,15 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     ) |> Blob.fromArray(_);
   };
 
+  public shared ({ caller }) func notify_another_auction(auction : Principal) : async () {
+    await* assertAdminAccess(caller);
+    assert auction != auction_principal;
+
+    let ac : AuctionWrapper.Self = AuctionWrapper.Self(auction);
+    let supported_tokens = await* ac.getSupportedTokens();
+    ignore await* ac.notify(supported_tokens);
+  };
+
   public shared ({ caller }) func migrate_auction_credits(source_auction : Principal, dest_auction : Principal) : async Text {
     await* assertAdminAccess(caller);
     assert not is_running;
