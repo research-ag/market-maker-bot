@@ -14,7 +14,6 @@ import Nat64 "mo:base/Nat64";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
-import Cycles "mo:base/ExperimentalCycles";
 
 import Vec "mo:vector";
 
@@ -78,9 +77,8 @@ module {
                 symbol = baseSymbols[i];
               };
             };
-            Cycles.add<system>(10_000_000_000);
             try {
-              Vec.add(xrcCalls, (i, xrc.get_exchange_rate(request)));
+              Vec.add(xrcCalls, (i, (with cycles = 10_000_000_000) xrc.get_exchange_rate(request)));
             } catch (err) {
               res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
             };
