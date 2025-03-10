@@ -22,7 +22,6 @@ type MarketPairShared = record {
   strategy : MarketPairStrategy;
 };
 type HistoryItemTypeV4 = record {
-  askOrder : opt OrderInfo;
   bidOrder : opt OrderInfo;
   message : text;
   pair : opt MarketPairShared;
@@ -38,7 +37,7 @@ type BotState = record {
   timer_interval : nat;
 };
 
-service : (principal, principal) -> {
+service : (opt principal, opt principal) -> {
 
   // PUBLIC API
   getBotState : () -> (BotState) query;
@@ -46,11 +45,11 @@ service : (principal, principal) -> {
   getPairsList : () -> (vec MarketPairShared) query;
   getQuoteInfo : () -> (TokenDescription) query;
   listAdmins : () -> (vec principal) query;
-  queryQuoteReserve : () -> (nat) query;
+  notifyQuote : () -> ();
 
   // ADMIN API
   addAdmin : (principal) -> ();
-  executeMarketMaking : () -> ();
+  executeActivityBot : () -> ();
   notify : (opt principal) -> ();
   removeAdmin : (principal) -> ();
   startBot : (nat) -> (
@@ -72,15 +71,7 @@ service : (principal, principal) -> {
       Ok : BotState;
     }
   );
-  updatePriceStrategy : (text, MarketPairStrategy) -> ();
-  setQuoteBalance : (
-    text,
-    variant {
-      dec : nat;
-      inc : nat;
-      set : nat;
-    },
-  ) -> (nat);
+  transfer_base_credits : (principal) -> (text);
 
   // SYSTEM API
 
