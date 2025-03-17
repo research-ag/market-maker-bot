@@ -13,6 +13,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: install npm packages
+        working-directory: ./src/market-maker-bot-frontend
+        run: npm ci
+
       - name: install mops
         run: npm i ic-mops -g
 
