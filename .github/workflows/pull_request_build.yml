@@ -1,0 +1,45 @@
+name: App build
+on:
+  pull_request:
+    types: [ synchronize, opened, reopened, ready_for_review, unlabeled ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: install mops
+        run: npm i ic-mops -g
+
+      - name: install mops packages
+        run: mops install
+
+      - name: Install dfx
+        uses: dfinity/setup-dfx@main
+
+      - name: install moc
+        run: mops toolchain use moc latest
+
+      - name: Build canister
+        run: dfx build --check
+
+      - name: Make bin directory
+        run: mkdir -p /home/runner/bin
+
+      - name: Get didc
+        run: |
+          release=$(curl --silent "https://api.github.com/repos/dfinity/candid/releases/latest" | awk -F\" '/tag_name/ { print $4 }')  	
+          curl -fsSL https://github.com/dfinity/candid/releases/download/$release/didc-linux64 > /home/runner/bin/didc
+          chmod +x /home/runner/bin/didc
+          echo "/home/runner/bin" >> $GITHUB_PATH
+
+      - name: Check implementation against public did file (activity bot)
+        run: didc check .dfx/local/canisters/activity-bot-backend/activity-bot-backend.did did/activity-bot-backend.did
+
+      - name: Check implementation against public did file (market maker bot)
+        run: didc check .dfx/local/canisters/market-maker-bot-backend/market-maker-bot-backend.did did/market-maker-bot-backend.did
