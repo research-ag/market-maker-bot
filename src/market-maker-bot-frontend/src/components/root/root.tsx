@@ -11,12 +11,14 @@ import {OrdersHistory} from '../orders-history';
 import InfoItem from './info-item';
 import Owners from "../owners";
 import ConnectButton from "../connect-button";
+import {useIdentity} from '../../integration/identity';
 
 const Root = () => {
   const { data: botState, isFetching } = useGetBotState();
   const [tabValue, setTabValue] = useState(0);
   let {data: quoteReserve} = useGetQuoteReserve();
   const {data: quoteInfo} = useGetQuoteInfo();
+  const { identity } = useIdentity();
 
   return (
     <Box sx={{ width: '100%', maxWidth: '1200px', p: 4, mx: 'auto' }}>
@@ -35,6 +37,7 @@ const Root = () => {
             <InfoItem label="Quote reserve"
                       content={'' + (Number(quoteReserve) / Math.pow(10, quoteInfo?.decimals || 0))}/>
             <ToggleBotButton isRunning = {!!botState?.running} isFetching = {isFetching} currentTimer = {botState?.timer_interval ?? 0n}/>
+            <InfoItem label="My principal" content={identity?.getPrincipal().toText() || '-'} withCopy={true}/>
           </Box>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
