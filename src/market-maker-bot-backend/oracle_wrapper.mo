@@ -70,6 +70,11 @@ module {
               case "TCYCLES" "XDR";
               case (_) baseSymbols[i];
             };
+            let baseClass = switch (baseSymbol) {
+              case "XDR" #FiatCurrency;
+              case (_) #Cryptocurrency;
+            };
+
             let request : OracleDefinitions.GetExchangeRateRequest = {
               timestamp = null;
               quote_asset = {
@@ -77,7 +82,7 @@ module {
                 symbol = quoteSymbol;
               };
               base_asset = {
-                class_ = #Cryptocurrency;
+                class_ = baseClass;
                 symbol = baseSymbol;
               };
             };
