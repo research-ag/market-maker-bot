@@ -74,6 +74,8 @@ module {
     deposit_history : ?(limit : Nat, skip : Nat);
     transaction_history : ?(limit : Nat, skip : Nat);
     price_history : ?(limit : Nat, skip : Nat, skipEmpty : Bool);
+    reversed_history : ?Bool;
+    last_prices : ?Bool;
   };
   public let EMPTY_QUERY : AuctionQuerySelection = {
     session_numbers = null;
@@ -83,6 +85,8 @@ module {
     deposit_history = null;
     transaction_history = null;
     price_history = null;
+    reversed_history = null;
+    last_prices = null;
   };
   public type AuctionQueryResponse = {
     session_numbers : [(Principal, Nat)];
@@ -92,6 +96,7 @@ module {
     deposit_history : [DepositHistoryItem];
     transaction_history : [TransactionHistoryItem];
     price_history : [PriceHistoryItem];
+    last_prices : [PriceHistoryItem];
     points : Nat;
   };
   public type Self = actor {
@@ -113,6 +118,5 @@ module {
       token : Principal;
       expected_fee : ?Nat;
     }) -> async WithdrawResult;
-    queryTransactionHistoryForward : query (token : ?Principal, limit : Nat, skip : Nat) -> async (history : [TransactionHistoryItem], sessionNumber : Nat, auctionInProgress : Bool);
   };
 };
