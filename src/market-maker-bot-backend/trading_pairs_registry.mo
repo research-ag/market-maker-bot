@@ -4,10 +4,12 @@ import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
 import List "mo:base/List";
+import Nat "mo:base/Nat";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Debug "mo:base/Debug";
 
+import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import MarketMaker "./market_maker";
 import Tokens "./tokens";
@@ -179,10 +181,34 @@ module TradingPairsRegistry {
         var processedTransactions = synchronizedTransactions;
         var sessionNumber : Nat = 0;
         let chunkSize : Nat = 500;
+
+        var credits : [(Principal, Auction.CreditInfo)] = [];
         label l while (true) {
           Debug.print("Replaying transactions history from " # debug_show processedTransactions # "...");
-          let (historyChunk, sn, auctionInProgress) = await auction.getAuction().queryTransactionHistoryForward(null, chunkSize, processedTransactions);
-          sessionNumber := sn;
+          let {
+            credits = c;
+            session_numbers;
+            transaction_history = historyChunk;
+          } = await auction.getAuction().auction_query(
+            [],
+            {
+              Auction.EMPTY_QUERY with
+              credits = ?true;
+              session_numbers = ?true;
+              transaction_history = ?(chunkSize, processedTransactions);
+              reversed_history = ?false;
+            },
+          );
+          credits := c;
+          var auctionInProgress = false;
+          for (i in session_numbers.keys()) {
+            if (i == 0) {
+              sessionNumber := session_numbers[i].1;
+            } else if (session_numbers[i].1 != sessionNumber) {
+              auctionInProgress := true;
+              sessionNumber := Nat.min(sessionNumber, session_numbers[i].1);
+            };
+          };
           for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
             switch (Array.indexOf<Principal>(token, basePrincipals, Principal.equal)) {
               case (null) {};
@@ -218,30 +244,31 @@ module TradingPairsRegistry {
           };
         };
         synchronizedTransactions := processedTransactions;
+
+        // refresh credits
+        // calculate quote credits reserve, update values in the registry
+        var creditsMap : List.List<(Principal, Nat)> = null;
+        for (credit in credits.vals()) {
+          creditsMap := List.push<(Principal, Nat)>((credit.0, credit.1.total), creditsMap);
+        };
+        var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(creditsMap, quoteInfo().principal, Principal.equal, 0);
+        for ((_, pair) in List.toIter(registry)) {
+          pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(creditsMap, pair.base.principal, Principal.equal, 0);
+          if (pair.quote_credits > 0) {
+            if (quoteFreeCredits <= pair.quote_credits) {
+              pair.quote_credits := quoteFreeCredits;
+              quoteFreeCredits := 0;
+            } else {
+              quoteFreeCredits -= pair.quote_credits;
+            };
+          };
+        };
+        quoteReserve := quoteFreeCredits;
+
         sessionNumber;
       } finally {
         replayTransactionHistoryLock := false;
       };
-    };
-
-    // pulls credits from the auction
-    public func refreshCredits(auction : AuctionWrapper.Self) : async* Nat {
-      let (credits, sessionNumber) = await* auction.getCredits();
-      // calculate quote credits reserve, update values in the registry
-      var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(credits, quoteInfo().principal, Principal.equal, 0);
-      for ((_, pair) in List.toIter(registry)) {
-        pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(credits, pair.base.principal, Principal.equal, 0);
-        if (pair.quote_credits > 0) {
-          if (quoteFreeCredits <= pair.quote_credits) {
-            pair.quote_credits := quoteFreeCredits;
-            quoteFreeCredits := 0;
-          } else {
-            quoteFreeCredits -= pair.quote_credits;
-          };
-        };
-      };
-      quoteReserve := quoteFreeCredits;
-      sessionNumber;
     };
 
     public func share() : StableDataV4 {

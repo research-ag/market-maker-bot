@@ -4,13 +4,10 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import AssocList "mo:base/AssocList";
 import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Float "mo:base/Float";
 import Int "mo:base/Int";
-import List "mo:base/List";
-import Option "mo:base/Option";
 import Prim "mo:prim";
 import Principal "mo:base/Principal";
 import Array "mo:base/Array";
@@ -62,32 +59,6 @@ module {
         case (0) 0;
         case (_) credits[0].1.total;
       };
-    };
-
-    // returns total credits (available + locked)
-    public func getCredits() : async* (AssocList.AssocList<Principal, Nat>, Nat) {
-      var map : List.List<(Principal, Nat)> = null;
-      var sessionNumber : ?Nat = null;
-      try {
-        let { session_numbers; credits } = await ac.auction_query(
-          [],
-          { Auction.EMPTY_QUERY with session_numbers = ?true; credits = ?true },
-        );
-        for ((p, sn) in session_numbers.vals()) {
-          switch (sessionNumber) {
-            case (?s) assert sn == s;
-            case (null) sessionNumber := ?sn;
-          };
-        };
-        Debug.print("Credits " # debug_show (credits));
-        for (credit in credits.vals()) {
-          map := List.push<(Principal, Nat)>((credit.0, credit.1.total), map);
-        };
-      } catch (e) {
-        Debug.print(Error.message(e));
-      };
-
-      (map, Option.get(sessionNumber, 0));
     };
 
     public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], sessionNumber : ?Nat) : async* {
