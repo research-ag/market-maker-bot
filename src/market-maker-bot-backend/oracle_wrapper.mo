@@ -60,12 +60,16 @@ module {
       // fill call info and schedule all cross-canister calls at once
       for (i in baseSymbols.keys()) {
         switch (baseSymbols[i]) {
-          case "TCYCLES" Vec.add(neutriniteSymbolPairs, (i, "TCYCLES", "XTC/USD"));
+          // case "TCYCLES" Vec.add(neutriniteSymbolPairs, (i, "TCYCLES", "XTC/USD"));
           case "GLDT" Vec.add(metalPriceSymbolPairs, (i, "GLDT", "USDXAU"));
           case "BTC" Vec.add(metalPriceSymbolPairs, (i, "BTC", "USDBTC"));
           case "ETH" Vec.add(metalPriceSymbolPairs, (i, "ETH", "USDETH"));
           case "EURC" Vec.add(metalPriceSymbolPairs, (i, "EURC", "USDEUR"));
           case _ {
+            let (baseSymbol, baseClass) = switch (baseSymbols[i]) {
+              case "TCYCLES" ("XDR", #FiatCurrency);
+              case _ (baseSymbols[i], #Cryptocurrency);
+            };
             let request : OracleDefinitions.GetExchangeRateRequest = {
               timestamp = null;
               quote_asset = {
@@ -73,8 +77,8 @@ module {
                 symbol = quoteSymbol;
               };
               base_asset = {
-                class_ = #Cryptocurrency;
-                symbol = baseSymbols[i];
+                class_ = baseClass;
+                symbol = baseSymbol;
               };
             };
             try {
