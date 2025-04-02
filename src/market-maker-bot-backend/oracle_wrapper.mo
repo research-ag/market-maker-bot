@@ -66,15 +66,10 @@ module {
           case "ETH" Vec.add(metalPriceSymbolPairs, (i, "ETH", "USDETH"));
           case "EURC" Vec.add(metalPriceSymbolPairs, (i, "EURC", "USDEUR"));
           case _ {
-            let baseSymbol = switch (baseSymbols[i]) {
-              case "TCYCLES" "XDR";
-              case (_) baseSymbols[i];
+            let (baseSymbol, baseClass) = switch (baseSymbols[i]) {
+              case "TCYCLES" ("XDR", #FiatCurrency);
+              case _ (baseSymbols[i], #Cryptocurrency);
             };
-            let baseClass = switch (baseSymbol) {
-              case "XDR" #FiatCurrency;
-              case (_) #Cryptocurrency;
-            };
-
             let request : OracleDefinitions.GetExchangeRateRequest = {
               timestamp = null;
               quote_asset = {
