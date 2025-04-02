@@ -127,8 +127,19 @@ module MarketMaker {
 
       func creditPart(credit : Nat, weight : Float) : Nat = (Float.fromInt(credit) * weight) |> Int.abs(Float.toInt(_));
 
-      let bids = Array.init<OrderInfo>(pair.strategy.size(), { amount = 0; price = 0 });
-      let asks = Array.init<OrderInfo>(pair.strategy.size(), { amount = 0; price = 0 });
+      let bids = Vec.new<OrderInfo>();
+      let asks = Vec.new<OrderInfo>();
+      // find already added order with same price and add the volume to it
+      // duplicated orders with the same price result in #ConflictingOrder error
+      func addOrderToList(list : Vec.Vector<OrderInfo>, amount : Nat, price : Float) {
+        for ((order, i) in Vec.items(list)) {
+          if (order.price == price) {
+            Vec.put(list, i, { amount = order.amount + amount; price });
+            return;
+          };
+        };
+        Vec.add(list, { amount; price });
+      };
 
       for (j in pair.strategy.keys()) {
         let (spread, weight) = pair.strategy[j];
@@ -140,10 +151,10 @@ module MarketMaker {
           },
           { bid_price; ask_price },
         );
-        bids[j] := { amount = bid_volume; price = bid_price };
-        asks[j] := { amount = ask_volume; price = ask_price };
+        addOrderToList(bids, bid_volume, bid_price);
+        addOrderToList(asks, ask_volume, ask_price);
       };
-      Vec.add(replaceArgs, (pair.base.principal, Array.freeze(bids), Array.freeze(asks)));
+      Vec.add(replaceArgs, (pair.base.principal, Vec.toArray(bids), Vec.toArray(asks)));
     };
 
     let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?sessionNumber);
