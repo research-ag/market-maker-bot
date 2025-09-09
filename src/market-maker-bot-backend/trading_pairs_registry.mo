@@ -167,7 +167,7 @@ module TradingPairsRegistry {
 
     var replayTransactionHistoryLock : Bool = false;
 
-    // replay transaction history to update quote token buckets. Returns current session number
+    // replay transaction history to update quote token buckets. Returns current account revision
     public func replayTransactionHistory(auction : AuctionWrapper.Self) : async* Nat {
       assert not replayTransactionHistoryLock;
       replayTransactionHistoryLock := true;
@@ -180,6 +180,7 @@ module TradingPairsRegistry {
 
         var processedTransactions = synchronizedTransactions;
         var sessionNumber : Nat = 0;
+        var accountRevision : Nat = 0;
         let chunkSize : Nat = 500;
 
         var credits : [(Principal, Auction.CreditInfo)] = [];
@@ -189,6 +190,7 @@ module TradingPairsRegistry {
             credits = c;
             session_numbers;
             transaction_history = historyChunk;
+            account_revision;
           } = await auction.getAuction().auction_query(
             [],
             {
@@ -200,6 +202,7 @@ module TradingPairsRegistry {
             },
           );
           credits := c;
+          accountRevision := account_revision;
           var auctionInProgress = false;
           for (i in session_numbers.keys()) {
             if (i == 0) {
@@ -265,7 +268,7 @@ module TradingPairsRegistry {
         };
         quoteReserve := quoteFreeCredits;
 
-        sessionNumber;
+        accountRevision;
       } finally {
         replayTransactionHistoryLock := false;
       };

@@ -28,22 +28,22 @@ import U "../market-maker-bot-backend/utils";
 
 import HistoryModule "./history";
 
-actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
+persistent actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
 
-  stable let auction_principal : Principal = switch (auction_be_) {
+  let auction_principal : Principal = switch (auction_be_) {
     case (?p) p;
     case (_) Prim.trap("Auction principal not provided");
   };
-  stable let oracle_principal : Principal = switch (oracle_be_) {
+  let oracle_principal : Principal = switch (oracle_be_) {
     case (?p) p;
     case (_) Prim.trap("Oracle principal not provided");
   };
 
-  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
-  stable var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
+  var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
+  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
 
-  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
-  stable let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
+  let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
+  let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
     historyV3,
     func(x) : HistoryModule.HistoryItemTypeV4 = {
       x with
@@ -54,24 +54,24 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     },
   );
 
-  let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
-  let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
-  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_strategy : MarketMaker.MarketPairStrategy = [((0.1, 0.0), 1.0)];
+  transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
+  transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
+  transient let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
+  transient let default_strategy : MarketMaker.MarketPairStrategy = [((0.1, 0.0), 1.0)];
 
-  var bot_timer : Timer.TimerId = 0;
+  transient var bot_timer : Timer.TimerId = 0;
 
   /// Bot state flags and variables
-  stable var bot_timer_interval : Nat = 6 * 60;
-  stable var is_running : Bool = false;
+  var bot_timer_interval : Nat = 6 * 60;
+  var is_running : Bool = false;
 
-  var is_initialized : Bool = false;
-  var is_initializing : Bool = false;
-  var quote_token : ?Principal = null;
-  var supported_tokens : [Principal] = [];
+  transient var is_initialized : Bool = false;
+  transient var is_initializing : Bool = false;
+  transient var quote_token : ?Principal = null;
+  transient var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
 
-  stable var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
+  var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
   switch (RBTree.size(stableAdminsMap)) {
     case (0) {
       let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
@@ -80,13 +80,13 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     };
     case (_) {};
   };
-  let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
+  transient let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
   adminsMap.unshare(stableAdminsMap);
 
   // a lock that prevents bot to run when set
-  var system_lock : Bool = false;
+  transient var system_lock : Bool = false;
 
-  let metrics = PT.PromTracker("", 65);
+  transient let metrics = PT.PromTracker("", 65);
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
   ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
@@ -357,7 +357,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {
           Vec.add(
@@ -417,7 +417,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {
           if (not Principal.equal(token, qt)) {
@@ -478,7 +478,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
     ignore await* tradingPairs.replayTransactionHistory(auction);
   };
 
-  var executionLock : Bool = false;
+  transient var executionLock : Bool = false;
 
   public shared ({ caller }) func executeActivityBot() : async () {
     await* assertAdminAccess(caller);
@@ -566,7 +566,7 @@ actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = sel
               };
             };
             case (#cancellation(err)) addHistoryItem(null, null, null, U.getErrorMessage(#CancellationError));
-            case (#SessionNumberMismatch x) addHistoryItem(null, null, null, U.getErrorMessage(#SessionNumberMismatch(x)));
+            case (#AccountRevisionMismatch) addHistoryItem(null, null, null, U.getErrorMessage(#AccountRevisionMismatch));
             case (#UnknownPrincipal) addHistoryItem(null, null, null, U.getErrorMessage(#UnknownPrincipal));
             case (#UnknownError x) addHistoryItem(null, null, null, U.getErrorMessage(#UnknownError(x)));
           };

@@ -112,7 +112,7 @@ module MarketMaker {
     pairs : [MarketPair],
     rates : [Float],
     ac : AuctionWrapper.Self,
-    sessionNumber : Nat,
+    accountRevision : Nat,
   ) : async* {
     #Ok : [(bids : [OrderInfo], asks : [OrderInfo], Float)];
     #Err : (U.ExecutionError, ?MarketPairShared, ?OrderInfo, ?OrderInfo, ?Float);
@@ -157,7 +157,7 @@ module MarketMaker {
       Vec.add(replaceArgs, (pair.base.principal, Vec.toArray(bids), Vec.toArray(asks)));
     };
 
-    let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?sessionNumber);
+    let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?accountRevision);
 
     switch (replace_orders_result) {
       case (#Ok _) {
@@ -181,7 +181,7 @@ module MarketMaker {
             };
           };
           case (#cancellation(err)) #Err(#CancellationError, null, null, null, null);
-          case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), null, null, null, null);
+          case (#AccountRevisionMismatch) #Err(#AccountRevisionMismatch, null, null, null, null);
           case (#UnknownPrincipal) #Err(#UnknownPrincipal, null, null, null, null);
           case (#UnknownError x) #Err(#UnknownError(x), null, null, null, null);
         };
