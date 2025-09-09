@@ -61,7 +61,7 @@ module {
       };
     };
 
-    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], sessionNumber : ?Nat) : async* {
+    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], accountRevision : ?Nat) : async* {
       #Ok : ([Auction.CancellationResult], [Auction.PlaceOrderResult]);
       #Err : {
         #cancellation : Auction.ManageOrdersCancellationError;
@@ -82,7 +82,7 @@ module {
         };
       };
       try {
-        let res = await ac.manageOrders(?(#all(null)), Vec.toArray(placements), sessionNumber);
+        let res = await ac.manageOrders(?(#all(null)), Vec.toArray(placements), accountRevision);
         switch (res) {
           case (#Ok x) #Ok(x);
           case (#Err err) switch (err) {

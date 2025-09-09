@@ -394,7 +394,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         tradingPairs.quoteInfo().symbol,
         pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
       );
-      let sessionNumber = await* tradingPairs.replayTransactionHistory(auction);
+      let accountRevision = await* tradingPairs.replayTransactionHistory(auction);
 
       let pairsToProcess : Vec.Vector<MarketMaker.MarketPair> = Vec.new();
       let ratesToProcess : Vec.Vector<Float> = Vec.new();
@@ -416,7 +416,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
           Vec.add(ratesToProcess, U.requireUpperOk(rates[i]));
         };
       };
-      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, sessionNumber);
+      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, accountRevision);
 
       switch (execute_result) {
         case (#Ok results) {
