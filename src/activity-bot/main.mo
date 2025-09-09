@@ -357,7 +357,7 @@ persistent actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Princ
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {
           Vec.add(
@@ -417,7 +417,7 @@ persistent actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Princ
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {
           if (not Principal.equal(token, qt)) {
@@ -566,7 +566,7 @@ persistent actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Princ
               };
             };
             case (#cancellation(err)) addHistoryItem(null, null, null, U.getErrorMessage(#CancellationError));
-            case (#SessionNumberMismatch x) addHistoryItem(null, null, null, U.getErrorMessage(#SessionNumberMismatch(x)));
+            case (#AccountRevisionMismatch) addHistoryItem(null, null, null, U.getErrorMessage(#AccountRevisionMismatch));
             case (#UnknownPrincipal) addHistoryItem(null, null, null, U.getErrorMessage(#UnknownPrincipal));
             case (#UnknownError x) addHistoryItem(null, null, null, U.getErrorMessage(#UnknownError(x)));
           };

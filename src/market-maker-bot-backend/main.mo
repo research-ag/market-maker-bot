@@ -484,7 +484,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
       try {
         for ((token, acc) in credits.vals()) {
           Vec.add(

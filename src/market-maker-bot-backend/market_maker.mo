@@ -181,7 +181,7 @@ module MarketMaker {
             };
           };
           case (#cancellation(err)) #Err(#CancellationError, null, null, null, null);
-          case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), null, null, null, null);
+          case (#AccountRevisionMismatch) #Err(#AccountRevisionMismatch, null, null, null, null);
           case (#UnknownPrincipal) #Err(#UnknownPrincipal, null, null, null, null);
           case (#UnknownError x) #Err(#UnknownError(x), null, null, null, null);
         };

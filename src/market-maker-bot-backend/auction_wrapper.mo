@@ -62,22 +62,22 @@ module {
     };
 
     public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], sessionNumber : ?Nat) : async* {
-      #Ok : ([Auction.CancellationResult], [Auction.OrderId]);
+      #Ok : ([Auction.CancellationResult], [Auction.PlaceOrderResult]);
       #Err : {
         #cancellation : Auction.ManageOrdersCancellationError;
         #placement : (argIndex : Nat, failedAsk : ?OrderInfo, failedBid : ?OrderInfo, error : Auction.ManageOrdersPlacementError);
       } or Auction.ManageOrdersOtherError;
     } {
-      let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
+      let placements : Vec.Vector<{ #ask : (Principal, Auction.OrderBookType, Nat, Float); #bid : (Principal, Auction.OrderBookType, Nat, Float) }> = Vec.new();
       for ((token, bids, asks) in orders.vals()) {
         for (ask in asks.vals()) {
           if (ask.amount > 0) {
-            Vec.add(placements, #ask(token, ask.amount, ask.price));
+            Vec.add(placements, #ask(token, #delayed, ask.amount, ask.price));
           };
         };
         for (bid in bids.vals()) {
           if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
-            Vec.add(placements, #bid(token, bid.amount, bid.price));
+            Vec.add(placements, #bid(token, #delayed, bid.amount, bid.price));
           };
         };
       };
@@ -89,12 +89,12 @@ module {
             case (#placement(e)) {
               let argIndex = func(token : Principal) : Nat = U.require(Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>((token, [], []), orders, func(a, b) = a.0 == b.0));
               switch (Vec.get(placements, e.index)) {
-                case (#ask(token, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
-                case (#bid(token, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
+                case (#ask(token, _, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
+                case (#bid(token, _, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
               };
             };
             case (#cancellation(e)) #Err(#cancellation(e));
-            case (#SessionNumberMismatch(x)) #Err(#SessionNumberMismatch(x));
+            case (#AccountRevisionMismatch(x)) #Err(#AccountRevisionMismatch(x));
             case (#UnknownPrincipal(x)) #Err(#UnknownPrincipal(x));
             case (#UnknownError(x)) #Err(#UnknownError(x));
           };
@@ -122,7 +122,7 @@ module {
     };
 
     public func notify(tokens : [Principal]) : async* [{ #Ok; #Err }] {
-      let calls : [var ?(async Auction.NotifyResult)] = Array.init(tokens.size(), null);
+      let calls : [var ?(async Auction.NotifyResponse)] = Array.init(tokens.size(), null);
       for (i in tokens.keys()) {
         calls[i] := ?ac.icrc84_notify({ token = tokens[i] });
       };
