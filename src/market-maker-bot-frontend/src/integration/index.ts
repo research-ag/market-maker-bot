@@ -3,12 +3,13 @@ import { useSnackbar } from 'notistack';
 
 import { useIdentity } from './identity';
 import { canisterId as cid, createActor } from '../declarations/market-maker-bot-backend';
-import { canisterId as acid, createActor as createActivityBotActor } from '../declarations/activity-bot-backend';
+import { createActor as createActivityBotActor } from '../declarations/activity-bot-backend';
 import { Principal } from "@dfinity/principal";
 import { useMemo } from "react";
 
 export const canisterId = cid;
-export const activityBotCanisterId = acid;
+export const activityBot0CanisterId = "2cvmy-aiaaa-aaaao-a3qmq-cai";
+export const activityBot1CanisterId = "yz5ba-gyaaa-aaaao-a4pta-cai";
 
 export const useBot = () => {
   const { identity } = useIdentity();
@@ -21,9 +22,9 @@ export const useBot = () => {
   return { bot };
 };
 
-export const useActivityBot = () => {
+export const useActivityBot = (canisterId: string) => {
   const { identity } = useIdentity();
-  const bot = createActivityBotActor(activityBotCanisterId, {
+  const bot = createActivityBotActor(canisterId, {
     agentOptions: {
       identity,
       verifyQuerySignatures: false,
@@ -270,10 +271,10 @@ export const useIsAdmin = () => {
 };
 
 export const useNotifyActivityBotQuote = () => {
-  const { bot } = useActivityBot();
+  const bots = [useActivityBot(activityBot0CanisterId), useActivityBot(activityBot1CanisterId)].map(({ bot }) => bot);
   const { enqueueSnackbar } = useSnackbar();
   return useMutation(
-    () => bot.notifyQuote(),
+    () => Promise.all(bots.map(b => b.notifyQuote())),
     {
       onSuccess: () => {
         enqueueSnackbar(`Done`, { variant: 'success' });
