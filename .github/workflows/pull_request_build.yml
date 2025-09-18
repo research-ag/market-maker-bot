@@ -43,7 +43,7 @@ jobs:
           echo "/home/runner/bin" >> $GITHUB_PATH
 
       - name: Check implementation against public did file (activity bot)
-        run: didc check .dfx/local/canisters/activity-bot-backend/activity-bot-backend.did did/activity-bot-backend.did
+        run: didc check .dfx/local/canisters/activity-bot-backend_0/activity-bot-backend_0.did did/activity-bot-backend.did
 
       - name: Check implementation against public did file (market maker bot)
         run: didc check .dfx/local/canisters/market-maker-bot-backend/market-maker-bot-backend.did did/market-maker-bot-backend.did

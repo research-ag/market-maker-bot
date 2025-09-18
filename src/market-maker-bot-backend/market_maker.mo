@@ -157,7 +157,7 @@ module MarketMaker {
       Vec.add(replaceArgs, (pair.base.principal, Vec.toArray(bids), Vec.toArray(asks)));
     };
 
-    let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?accountRevision);
+    let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), #immediate, ?accountRevision);
 
     switch (replace_orders_result) {
       case (#Ok _) {

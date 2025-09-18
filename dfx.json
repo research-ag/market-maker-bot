@@ -13,10 +13,10 @@
         "output": "./src/declarations/market-maker-bot-backend"
       }
     },
-    "activity-bot-backend": {
+    "activity-bot-backend_0": {
       "main": "src/activity-bot/main.mo",
       "type": "motoko",
-      "init_arg": "(opt principal \"farwr-jqaaa-aaaao-qj4ya-cai\", opt principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")",
+      "init_arg": "(0, opt principal \"farwr-jqaaa-aaaao-qj4ya-cai\", opt principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")",
       "declarations": {
         "bindings": [
           "js",
@@ -25,11 +25,12 @@
         "output": "./src/declarations/activity-bot-backend"
       }
     },
+    "activity-bot-backend_1": {
+      "main": "src/activity-bot/main.mo",
+      "type": "motoko",
+      "init_arg": "(1, opt principal \"farwr-jqaaa-aaaao-qj4ya-cai\", opt principal \"uf6dk-hyaaa-aaaaq-qaaaq-cai\")"
+    },
     "market-maker-bot-frontend": {
-      "dependencies": [
-        "market-maker-bot-backend",
-        "activity-bot-backend"
-      ],
       "source": [
         "src/market-maker-bot-frontend/dist"
       ],

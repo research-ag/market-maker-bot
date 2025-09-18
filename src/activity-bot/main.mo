@@ -28,7 +28,11 @@ import U "../market-maker-bot-backend/utils";
 
 import HistoryModule "./history";
 
-persistent actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
+persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
+
+  if (activityBotMode > 1) {
+    Prim.trap("Unknown activity bot mode");
+  };
 
   let auction_principal : Principal = switch (auction_be_) {
     case (?p) p;
@@ -537,11 +541,18 @@ persistent actor class ActivityBot(auction_be_ : ?Principal, oracle_be_ : ?Princ
         Vec.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.requireUpperOk(rates[i])));
       };
 
+      let orderBookType = if (activityBotMode == 0) {
+        #immediate;
+      } else {
+        #delayed;
+      };
+      
       let replace_orders_result = await* auction.replaceOrders(
         Array.tabulate<(Principal, [MarketMaker.OrderInfo], [MarketMaker.OrderInfo])>(
           Vec.size(placements),
           func(i) = Vec.get(placements, i) |> (_.0.base.principal, [_.1], []),
         ),
+        orderBookType,
         null,
       );
 

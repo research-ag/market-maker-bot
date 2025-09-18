@@ -61,7 +61,7 @@ module {
       };
     };
 
-    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], accountRevision : ?Nat) : async* {
+    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], orderBookType : Auction.OrderBookType, accountRevision : ?Nat) : async* {
       #Ok : ([Auction.CancellationResult], [Auction.PlaceOrderResult]);
       #Err : {
         #cancellation : Auction.ManageOrdersCancellationError;
@@ -72,12 +72,12 @@ module {
       for ((token, bids, asks) in orders.vals()) {
         for (ask in asks.vals()) {
           if (ask.amount > 0) {
-            Vec.add(placements, #ask(token, #delayed, ask.amount, ask.price));
+            Vec.add(placements, #ask(token, orderBookType, ask.amount, ask.price));
           };
         };
         for (bid in bids.vals()) {
           if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
-            Vec.add(placements, #bid(token, #delayed, bid.amount, bid.price));
+            Vec.add(placements, #bid(token, orderBookType, bid.amount, bid.price));
           };
         };
       };
