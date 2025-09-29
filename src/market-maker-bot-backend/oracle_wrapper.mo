@@ -28,7 +28,7 @@ module {
     // how many times rate for single base token considered to be valid.
     // In case of error response we can use previous successful response as soon as
     // error did not already happen CACHE_TTL times in a row
-    let CACHE_TTL = 1;
+    let CACHE_TTL = 2;
 
     var ratesCache : AssocList.AssocList<Text, { rate : Float; var ttl : Nat }> = List.nil();
     private func cacheRate(symbol : Text, rate : Float) {
