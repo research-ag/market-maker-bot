@@ -37,20 +37,9 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   let auction_principal : Principal = auction_be_;
   let oracle_principal : Principal = oracle_be_;
 
-  var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
-  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
+  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.defaultStableDataV4();
 
-  let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
-  let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
-    historyV3,
-    func(x) : HistoryModule.HistoryItemTypeV4 = {
-      x with
-      pair = switch (x.pair) {
-        case (?p) (?{ p with strategy = [(p.spread, 1.0)] });
-        case (null) null;
-      };
-    },
-  );
+  let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.new();
 
   transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
