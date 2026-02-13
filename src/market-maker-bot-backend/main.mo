@@ -70,6 +70,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
   ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
   ignore metrics.addPullValue("quote_reserve", [], tradingPairs.getQuoteReserve);
+  ignore metrics.addPullValue("history_length", [], func() = List.size(history_V4));
 
   transient var tradingPairStrategyMetrics : List.List<[(PT.PullValue, PT.PullValue, PT.PullValue)]> = List.empty();
   func updateTradingPairsMetrics() {

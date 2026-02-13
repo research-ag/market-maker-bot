@@ -77,6 +77,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
   ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
   ignore metrics.addPullValue("quote_credits", [], tradingPairs.getTotalQuoteCredits);
+  ignore metrics.addPullValue("history_length", [], func() = List.size(history_V4));
 
   func getState() : (BotState) {
     {
