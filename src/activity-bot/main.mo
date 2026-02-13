@@ -31,7 +31,7 @@ import HistoryModule "./history";
 
 persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
 
-  include AdminsMixin();
+  include AdminsMixin(null);
 
   if (activityBotMode > 1) {
     Prim.trap("Unknown activity bot mode");

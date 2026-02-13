@@ -1,16 +1,17 @@
 import Error "mo:core/Error";
+import Option "mo:core/Option";
 import Principal "mo:core/Principal";
 import Set "mo:core/Set";
 
 import Prim "mo:prim";
 
 /// Mixin that adds admin functionality
-mixin() {
+mixin(defaultAdmin : ?Principal) {
   var admins : Set.Set<Principal> = Set.empty();
 
   switch (Set.size(admins)) {
     case (0) {
-      Set.add(admins, Principal.compare, Principal.fromText("2vxsx-fae"));
+      Set.add(admins, Principal.compare, Option.get(defaultAdmin, Principal.fromText("2vxsx-fae")));
     };
     case (_) {};
   };

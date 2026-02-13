@@ -35,7 +35,7 @@ import U "./utils";
 
 persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
 
-  include AdminsMixin();
+  include AdminsMixin(null);
 
   let auction_principal : Principal = auction_be_;
   let oracle_principal : Principal = oracle_be_;
