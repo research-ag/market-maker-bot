@@ -89,23 +89,24 @@ module TradingPairsRegistry {
           switch (Map.get(tokens_info, Principal.compare, token)) {
             case (?_) {
               let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.compare, "Error get base token info");
-              let pair : MarketMaker.MarketPair = {
-                base = {
-                  principal = token;
-                  symbol = base_token_info.symbol;
-                  decimals = base_token_info.decimals;
+              if (not Map.containsKey(registry, Text.compare, base_token_info.symbol)) {
+                let pair : MarketMaker.MarketPair = {
+                  base = {
+                    principal = token;
+                    symbol = base_token_info.symbol;
+                    decimals = base_token_info.decimals;
+                  };
+                  var base_credits = 0;
+                  var quote_credits = 0;
+                  var strategy = default_strategy;
                 };
-                var base_credits = 0;
-                var quote_credits = 0;
-                var strategy = default_strategy;
+                Map.add<Text, MarketMaker.MarketPair>(
+                  registry,
+                  Text.compare,
+                  base_token_info.symbol,
+                  pair,
+                );
               };
-
-              Map.add<Text, MarketMaker.MarketPair>(
-                registry,
-                Text.compare,
-                pair.base.symbol,
-                pair,
-              );
             };
             case (_) {};
           };
