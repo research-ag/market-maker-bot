@@ -12,7 +12,7 @@ import Prim "mo:prim";
 import Principal "mo:base/Principal";
 import Array "mo:base/Array";
 
-import Vec "mo:vector";
+import List "mo:core/List";
 
 import Auction "./auction_definitions";
 import U "./utils";
@@ -68,27 +68,27 @@ module {
         #placement : (argIndex : Nat, failedAsk : ?OrderInfo, failedBid : ?OrderInfo, error : Auction.ManageOrdersPlacementError);
       } or Auction.ManageOrdersOtherError;
     } {
-      let placements : Vec.Vector<{ #ask : (Principal, Auction.OrderBookType, Nat, Float); #bid : (Principal, Auction.OrderBookType, Nat, Float) }> = Vec.new();
+      let placements : List.List<{ #ask : (Principal, Auction.OrderBookType, Nat, Float); #bid : (Principal, Auction.OrderBookType, Nat, Float) }> = List.empty();
       for ((token, bids, asks) in orders.vals()) {
         for (ask in asks.vals()) {
           if (ask.amount > 0) {
-            Vec.add(placements, #ask(token, orderBookType, ask.amount, ask.price));
+            List.add(placements, #ask(token, orderBookType, ask.amount, ask.price));
           };
         };
         for (bid in bids.vals()) {
           if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
-            Vec.add(placements, #bid(token, orderBookType, bid.amount, bid.price));
+            List.add(placements, #bid(token, orderBookType, bid.amount, bid.price));
           };
         };
       };
       try {
-        let res = await ac.manageOrders(?(#all(null)), Vec.toArray(placements), accountRevision);
+        let res = await ac.manageOrders(?(#all(null)), List.toArray(placements), accountRevision);
         switch (res) {
           case (#Ok x) #Ok(x);
           case (#Err err) switch (err) {
             case (#placement(e)) {
               let argIndex = func(token : Principal) : Nat = U.require(Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>((token, [], []), orders, func(a, b) = a.0 == b.0));
-              switch (Vec.get(placements, e.index)) {
+              switch (List.at(placements, e.index)) {
                 case (#ask(token, _, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
                 case (#bid(token, _, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
               };

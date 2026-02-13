@@ -15,8 +15,9 @@ import RBTree "mo:base/RBTree";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
-import PT "mo:promtracker";
-import Vec "mo:vector";
+import List "mo:core/List";
+
+import PT "../promtracker";
 
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
@@ -43,20 +44,9 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     case (_) Prim.trap("Oracle principal not provided");
   };
 
-  var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
-  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
+  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.defaultStableDataV4();
 
-  let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
-  let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
-    historyV3,
-    func(x) : HistoryModule.HistoryItemTypeV4 = {
-      x with
-      pair = switch (x.pair) {
-        case (?p) (?{ p with strategy = [(p.spread, 1.0)] });
-        case (null) null;
-      };
-    },
-  );
+  let history_V4 : List.List<HistoryModule.HistoryItemTypeV4> = List.empty();
 
   transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
@@ -90,11 +80,11 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  transient let metrics = PT.PromTracker("", 65);
+  transient let metrics = PT.PromTracker(PT.canisterLabel(self));
   metrics.addSystemValues();
-  ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
-  ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
-  ignore metrics.addPullValue("quote_credits", "", tradingPairs.getTotalQuoteCredits);
+  ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
+  ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
+  ignore metrics.addPullValue("quote_credits", [], tradingPairs.getTotalQuoteCredits);
 
   func getState() : (BotState) {
     {
@@ -127,7 +117,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        let labels = "base=\"" # pair.base.symbol # "\"";
+        let labels = [("base", pair.base.symbol)];
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000)));
@@ -154,7 +144,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
     let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
     switch (req.method, path, is_initialized) {
-      case ("GET", "/metrics", true) metrics.renderExposition("canister=\"" # PT.shortName(self) # "\"") |> HTTP.renderPlainText(_);
+      case ("GET", "/metrics", true) metrics.renderExposition() |> HTTP.renderPlainText(_);
       case (_) HTTP.render400();
     };
   };
@@ -206,7 +196,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, rate, message);
-    Vec.add(historyV4, historyItem);
+    List.add(history_V4, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -235,7 +225,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   };
 
   public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV4]) {
-    var iter = Vec.valsRev<HistoryModule.HistoryItemTypeV4>(historyV4);
+    var iter = List.reverseValues<HistoryModule.HistoryItemTypeV4>(history_V4);
     switch (token) {
       case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV4>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
@@ -361,10 +351,10 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          Vec.add(
+          List.add(
             calls,
             (
               token,
@@ -381,7 +371,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in Vec.vals(calls)) {
+      for ((token, call, pair) in List.values(calls)) {
         try {
           switch (await call) {
             case (#Ok _) switch (pair) {
@@ -421,11 +411,11 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
           if (not Principal.equal(token, qt)) {
-            Vec.add(
+            List.add(
               calls,
               (
                 token,
@@ -446,7 +436,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       } catch (err) {
         Debug.print("transfer_base_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in Vec.vals(calls)) {
+      for ((token, call, pair) in List.values(calls)) {
         try {
           switch (await call, pair) {
             case (#Ok _, ?p) p.base_credits := 0;
@@ -509,7 +499,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
       );
 
-      let placements : Vec.Vector<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)> = Vec.new();
+      let placements : List.List<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)> = List.empty();
       label L for (i in pairs.keys()) {
         let pair = pairs[i];
 
@@ -538,7 +528,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         if (amount % volumeStep > 0) {
           amount += volumeStep - (amount % volumeStep);
         };
-        Vec.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.requireUpperOk(rates[i])));
+        List.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.requireUpperOk(rates[i])));
       };
 
       let orderBookType = if (activityBotMode == 0) {
@@ -546,11 +536,11 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       } else {
         #delayed;
       };
-      
+
       let replace_orders_result = await* auction.replaceOrders(
         Array.tabulate<(Principal, [MarketMaker.OrderInfo], [MarketMaker.OrderInfo])>(
-          Vec.size(placements),
-          func(i) = Vec.get(placements, i) |> (_.0.base.principal, [_.1], []),
+          List.size(placements),
+          func(i) = List.at(placements, i) |> (_.0.base.principal, [_.1], []),
         ),
         orderBookType,
         null,
@@ -558,7 +548,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
       switch (replace_orders_result) {
         case (#Ok _) {
-          for (p in Vec.vals(placements)) {
+          for (p in List.values(placements)) {
             addHistoryItem(?MarketMaker.sharePair(p.0), ?p.1, ?p.2, "OK");
           };
         };

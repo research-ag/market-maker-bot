@@ -181,7 +181,7 @@ module TradingPairsRegistry {
         var processedTransactions = synchronizedTransactions;
         var sessionNumber : Nat = 0;
         var accountRevision : Nat = 0;
-        let chunkSize : Nat = 500;
+        let chunkSize : Nat = 5000;
 
         var credits : [(Principal, Auction.CreditInfo)] = [];
         label l while (true) {

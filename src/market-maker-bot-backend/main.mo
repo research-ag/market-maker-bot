@@ -20,8 +20,8 @@ import RBTree "mo:base/RBTree";
 import Text "mo:base/Text";
 import Timer "mo:base/Timer";
 
-import PT "mo:promtracker";
-import Vec "mo:vector";
+import PT "../promtracker";
+import List "mo:core/List";
 
 import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
@@ -39,7 +39,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
 
   var tradingPairsDataV4 : TPR.StableDataV4 = TPR.defaultStableDataV4();
 
-  let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.new();
+  let history_V4 : List.List<HistoryModule.HistoryItemTypeV4> = List.empty();
 
   transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
@@ -72,28 +72,28 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  transient let metrics = PT.PromTracker("", 65);
+  transient let metrics = PT.PromTracker(PT.canisterLabel(self));
   metrics.addSystemValues();
-  ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
-  ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
-  ignore metrics.addPullValue("quote_reserve", "", tradingPairs.getQuoteReserve);
+  ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
+  ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
+  ignore metrics.addPullValue("quote_reserve", [], tradingPairs.getQuoteReserve);
 
-  transient var tradingPairStrategyMetrics : Vec.Vector<[(PT.PullValue, PT.PullValue, PT.PullValue)]> = Vec.new();
+  transient var tradingPairStrategyMetrics : List.List<[(PT.PullValue, PT.PullValue, PT.PullValue)]> = List.empty();
   func updateTradingPairsMetrics() {
     // remove existing metrics
-    for (v in Vec.vals(tradingPairStrategyMetrics)) {
+    for (v in List.values(tradingPairStrategyMetrics)) {
       for (x in v.vals()) {
         x.0.remove();
         x.1.remove();
         x.2.remove();
       };
     };
-    tradingPairStrategyMetrics := Vec.new();
+    tradingPairStrategyMetrics := List.empty();
     // register metrics
     let pairs = tradingPairs.getPairs();
     for (i in pairs.keys()) {
       let pair = func() : MarketMaker.MarketPair = tradingPairs.getPairs()[i];
-      let lbl = func(index : Nat) : Text = "base=\"" # pair().base.symbol # "\",index=\"" # Nat.toText(index) # "\"";
+      let lbl = func(index : Nat) : PT.Labels = [("base", pair().base.symbol), ("index", Nat.toText(index))];
       let mtr = Array.tabulate<(PT.PullValue, PT.PullValue, PT.PullValue)>(
         pairs[i].strategy.size(),
         func(j) = (
@@ -102,7 +102,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
           metrics.addPullValue("spread_weight_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(_.strategy[j].1 * 10000))),
         ),
       );
-      Vec.add(tradingPairStrategyMetrics, mtr);
+      List.add(tradingPairStrategyMetrics, mtr);
     };
   };
 
@@ -137,7 +137,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        let labels = "base=\"" # pair.base.symbol # "\"";
+        let labels = [("base", pair.base.symbol)];
 
         ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
         ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
@@ -164,7 +164,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
     let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
     switch (req.method, path, is_initialized) {
-      case ("GET", "/metrics", true) metrics.renderExposition("canister=\"" # PT.shortName(self) # "\"") |> HTTP.renderPlainText(_);
+      case ("GET", "/metrics", true) metrics.renderExposition() |> HTTP.renderPlainText(_);
       case (_) HTTP.render400();
     };
   };
@@ -216,7 +216,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
-    Vec.add(historyV4, historyItem);
+    List.add(history_V4, historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -245,7 +245,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   };
 
   public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV4]) {
-    var iter = Vec.valsRev<HistoryModule.HistoryItemTypeV4>(historyV4);
+    var iter = List.reverseValues<HistoryModule.HistoryItemTypeV4>(history_V4);
     switch (token) {
       case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV4>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
@@ -385,8 +385,8 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       );
       let accountRevision = await* tradingPairs.replayTransactionHistory(auction);
 
-      let pairsToProcess : Vec.Vector<MarketMaker.MarketPair> = Vec.new();
-      let ratesToProcess : Vec.Vector<Float> = Vec.new();
+      let pairsToProcess : List.List<MarketMaker.MarketPair> = List.empty();
+      let ratesToProcess : List.List<Float> = List.empty();
       for (i in pairs.keys()) {
         let market_pair = pairs[i];
         if (market_pair.base_credits == 0 or market_pair.quote_credits == 0 or U.upperResultToOption(rates[i]) == null) {
@@ -401,11 +401,11 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
             addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
           };
         } else {
-          Vec.add(pairsToProcess, market_pair);
-          Vec.add(ratesToProcess, U.requireUpperOk(rates[i]));
+          List.add(pairsToProcess, market_pair);
+          List.add(ratesToProcess, U.requireUpperOk(rates[i]));
         };
       };
-      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, accountRevision);
+      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), List.toArray(pairsToProcess), List.toArray(ratesToProcess), auction, accountRevision);
 
       switch (execute_result) {
         case (#Ok results) {
@@ -413,7 +413,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
             let (bids, asks, rate) = results[i];
             for (j in Iter.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
               addHistoryItem(
-                ?MarketMaker.sharePair(Vec.get(pairsToProcess, i)),
+                ?MarketMaker.sharePair(List.at(pairsToProcess, i)),
                 if (j < bids.size()) { ?bids[j] } else { null },
                 if (j < asks.size()) { ?asks[j] } else { null },
                 ?rate,
@@ -473,10 +473,10 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          Vec.add(
+          List.add(
             calls,
             (
               token,
@@ -493,7 +493,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in Vec.vals(calls)) {
+      for ((token, call, pair) in List.values(calls)) {
         try {
           switch (await call) {
             case (#Ok _) switch (pair) {
