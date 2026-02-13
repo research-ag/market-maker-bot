@@ -6,12 +6,12 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Array "mo:base/Array";
-import Float "mo:base/Float";
-import Principal "mo:base/Principal";
-import Int "mo:base/Int";
-import Nat32 "mo:base/Nat32";
-import Int32 "mo:base/Int32";
+import Array "mo:core/Array";
+import Float "mo:core/Float";
+import Principal "mo:core/Principal";
+import Int "mo:core/Int";
+import Nat32 "mo:core/Nat32";
+import Int32 "mo:core/Int32";
 
 import List "mo:core/List";
 

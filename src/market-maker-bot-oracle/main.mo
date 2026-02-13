@@ -1,5 +1,6 @@
-import Option "mo:base/Option";
-actor CustomXRC {
+import Option "mo:core/Option";
+
+persistent actor CustomXRC {
   public type Asset = { class_ : AssetClass; symbol : Text };
   public type AssetClass = { #Cryptocurrency; #FiatCurrency };
   public type ExchangeRate = {
@@ -70,5 +71,5 @@ actor CustomXRC {
       quote_asset = req.quote_asset;
       base_asset = req.base_asset;
     });
-  }
-}
+  };
+};

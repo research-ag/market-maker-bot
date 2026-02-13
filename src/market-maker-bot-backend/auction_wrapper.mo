@@ -4,15 +4,15 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
-import Prim "mo:prim";
-import Principal "mo:base/Principal";
-import Array "mo:base/Array";
-
+import Array "mo:core/Array";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
 import List "mo:core/List";
+import Prim "mo:prim";
+import Principal "mo:core/Principal";
+import VarArray "mo:core/VarArray";
 
 import Auction "./auction_definitions";
 import U "./utils";
@@ -87,7 +87,13 @@ module {
           case (#Ok x) #Ok(x);
           case (#Err err) switch (err) {
             case (#placement(e)) {
-              let argIndex = func(token : Principal) : Nat = U.require(Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>((token, [], []), orders, func(a, b) = a.0 == b.0));
+              let argIndex = func(token : Principal) : Nat = U.require(
+                Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>(
+                  orders,
+                  func(a, b) = a.0 == b.0,
+                  (token, [], []),
+                )
+              );
               switch (List.at(placements, e.index)) {
                 case (#ask(token, _, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
                 case (#bid(token, _, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
@@ -122,11 +128,11 @@ module {
     };
 
     public func notify(tokens : [Principal]) : async* [{ #Ok; #Err }] {
-      let calls : [var ?(async Auction.NotifyResponse)] = Array.init(tokens.size(), null);
+      let calls : [var ?(async Auction.NotifyResponse)] = VarArray.repeat(null, tokens.size());
       for (i in tokens.keys()) {
         calls[i] := ?ac.icrc84_notify({ token = tokens[i] });
       };
-      let res : [var { #Ok; #Err }] = Array.init(tokens.size(), #Err);
+      let res : [var { #Ok; #Err }] = VarArray.repeat(#Err, tokens.size());
       for (i in calls.keys()) {
         res[i] := switch (calls[i]) {
           case (null) #Err;
@@ -144,7 +150,7 @@ module {
           };
         };
       };
-      Array.freeze(res);
+      Array.fromVarArray(res);
     };
   };
 };

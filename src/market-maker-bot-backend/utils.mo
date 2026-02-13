@@ -4,9 +4,10 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import AssocList "mo:base/AssocList";
-import Iter "mo:base/Iter";
-import Nat "mo:base/Nat";
+import Iter "mo:core/Iter";
+import Map "mo:core/Map";
+import Nat "mo:core/Nat";
+import Order "mo:core/Order";
 import Prim "mo:prim";
 
 module {
@@ -42,13 +43,13 @@ module {
     };
   };
 
-  public func getByKeyOrDefault<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, default : K) : (K) {
-    let ?_value = AssocList.find<T, K>(list, key, equal) else return default;
+  public func getByKeyOrDefault<T, K>(list : Map.Map<T, K>, key : T, compare : (T, T) -> Order.Order, default : K) : (K) {
+    let ?_value = Map.get<T, K>(list, compare, key) else return default;
     _value;
   };
 
-  public func getByKeyOrTrap<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, message : Text) : (K) {
-    let ?_value = AssocList.find<T, K>(list, key, equal) else Prim.trap(message);
+  public func getByKeyOrTrap<T, K>(list : Map.Map<T, K>, key : T, compare : (T, T) -> Order.Order, message : Text) : (K) {
+    let ?_value = Map.get<T, K>(list, compare, key) else Prim.trap(message);
     _value;
   };
 

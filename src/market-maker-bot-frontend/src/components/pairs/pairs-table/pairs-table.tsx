@@ -14,7 +14,7 @@ export const PairsTable = () => {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isQuoteBalanceModalOpen, setIsQuoteBalanceModalOpen] = useState(false);
 
-  const [selectedItem, setSelectedItem] = useState<MarketPairShared>({ base: { symbol: '-'}, spread: [0.05, 0.0] } as any);
+  const [selectedItem, setSelectedItem] = useState<MarketPairShared>({ base: { symbol: '-'}, spread: [0.02, 0.0] } as any);
 
   const isAdmin = useIsAdmin();
 

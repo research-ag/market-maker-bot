@@ -4,11 +4,11 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Time "mo:base/Time";
-import Text "mo:base/Text";
-import Nat "mo:base/Nat";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
+import Time "mo:core/Time";
+import Text "mo:core/Text";
+import Nat "mo:core/Nat";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
 import MarketMakerModule "./market_maker";
 
 module HistoryModule {
@@ -51,7 +51,6 @@ module HistoryModule {
 
   public func getText(item : HistoryItemTypeV4) : Text {
     Text.join(
-      "",
       [
         Int.toText(item.timestamp) # ":  ",
         switch (item.pair) {
@@ -72,6 +71,7 @@ module HistoryModule {
         },
         "RESULT " # item.message,
       ].vals(),
+      "",
     );
   };
 };

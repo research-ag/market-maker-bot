@@ -5,28 +5,29 @@
 /// Copyright: 2023-2024 MR Research AG
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
-import Array "mo:base/Array";
-import Blob "mo:base/Blob";
-import Bool "mo:base/Bool";
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
-import Iter "mo:base/Iter";
-import Nat "mo:base/Nat";
-import Nat8 "mo:base/Nat8";
-import Principal "mo:base/Principal";
-import RBTree "mo:base/RBTree";
-import Text "mo:base/Text";
-import Timer "mo:base/Timer";
+import Array "mo:core/Array";
+import Blob "mo:core/Blob";
+import Bool "mo:core/Bool";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+import Iter "mo:core/Iter";
+import List "mo:core/List";
+import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
+import Principal "mo:core/Principal";
+import Text "mo:core/Text";
+import Timer "mo:core/Timer";
 
 import PT "../promtracker";
-import List "mo:core/List";
+
+import AdminsMixin "../mixins/admins_mixin";
+import PtHttp "../promtracker/mixins/http";
 
 import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
 import HistoryModule "./history";
-import HTTP "./http";
 import MarketMaker "./market_maker";
 import OracleWrapper "./oracle_wrapper";
 import TPR "./trading_pairs_registry";
@@ -34,17 +35,19 @@ import U "./utils";
 
 persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
 
+  include AdminsMixin();
+
   let auction_principal : Principal = auction_be_;
   let oracle_principal : Principal = oracle_be_;
 
-  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.defaultStableDataV4();
+  var tradingPairsDataV5 : TPR.StableDataV5 = TPR.defaultStableDataV5();
 
   let history_V4 : List.List<HistoryModule.HistoryItemTypeV4> = List.empty();
 
   transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   transient let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  transient let default_strategy : MarketMaker.MarketPairStrategy = [((0.05, 0.0), 1.0)];
+  transient let default_strategy : MarketMaker.MarketPairStrategy = [((0.02, 0.0), 1.0)];
 
   transient var bot_timer : Timer.TimerId = 0;
 
@@ -57,22 +60,12 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   transient var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
 
-  var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
-  switch (RBTree.size(stableAdminsMap)) {
-    case (0) {
-      let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
-      adminsMap.put(Principal.fromText("2vxsx-fae"), ());
-      stableAdminsMap := adminsMap.share();
-    };
-    case (_) {};
-  };
-  transient let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
-  adminsMap.unshare(stableAdminsMap);
-
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
   transient let metrics = PT.PromTracker(PT.canisterLabel(self));
+  include PtHttp(metrics, "/metrics");
+
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
   ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
@@ -132,7 +125,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     try {
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      tradingPairs.unshare(tradingPairsDataV4);
+      tradingPairs.unshare(tradingPairsDataV5);
       let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
@@ -161,20 +154,11 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     supported_tokens : [Principal];
   };
 
-  public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
-    let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
-    switch (req.method, path, is_initialized) {
-      case ("GET", "/metrics", true) metrics.renderExposition() |> HTTP.renderPlainText(_);
-      case (_) HTTP.render400();
-    };
-  };
-
   system func preupgrade() {
     Debug.print("Preupgrade");
     if (is_initialized) {
-      tradingPairsDataV4 := tradingPairs.share();
+      tradingPairsDataV5 := tradingPairs.share();
     };
-    stableAdminsMap := adminsMap.share();
   };
 
   system func postupgrade() {
@@ -189,29 +173,6 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         };
       },
     );
-  };
-
-  public query func listAdmins() : async [Principal] = async adminsMap.entries()
-  |> Iter.map<(Principal, ()), Principal>(_, func((p, _)) = p)
-  |> Iter.toArray(_);
-
-  private func assertAdminAccess(principal : Principal) : async* () {
-    if (adminsMap.get(principal) == null) {
-      throw Error.reject("No Access for this principal " # Principal.toText(principal));
-    };
-  };
-
-  public shared ({ caller }) func addAdmin(principal : Principal) : async () {
-    await* assertAdminAccess(caller);
-    adminsMap.put(principal, ());
-  };
-
-  public shared ({ caller }) func removeAdmin(principal : Principal) : async () {
-    if (Principal.equal(principal, caller)) {
-      throw Error.reject("Cannot remove yourself from admins");
-    };
-    await* assertAdminAccess(caller);
-    adminsMap.delete(principal);
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
@@ -411,7 +372,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         case (#Ok results) {
           for (i in results.keys()) {
             let (bids, asks, rate) = results[i];
-            for (j in Iter.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
+            for (j in Nat.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
               addHistoryItem(
                 ?MarketMaker.sharePair(List.at(pairsToProcess, i)),
                 if (j < bids.size()) { ?bids[j] } else { null },

@@ -1,13 +1,13 @@
-import Array "mo:base/Array";
-import AssocList "mo:base/AssocList";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
-import List "mo:base/List";
-import Nat "mo:base/Nat";
-import Principal "mo:base/Principal";
-import Text "mo:base/Text";
-import Debug "mo:base/Debug";
+import Array "mo:core/Array";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+import Map "mo:core/Map";
+import Nat "mo:core/Nat";
+import Principal "mo:core/Principal";
+import Text "mo:core/Text";
+import VarArray "mo:core/VarArray";
 
 import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
@@ -17,43 +17,14 @@ import U "./utils";
 
 module TradingPairsRegistry {
 
-  public type StableDataV4 = {
-    registry : AssocList.AssocList<Text, MarketMaker.MarketPair>;
+  public type StableDataV5 = {
+    registry : Map.Map<Text, MarketMaker.MarketPair>;
     quoteReserve : Nat;
     synchronizedTransactions : Nat;
   };
 
-  public func defaultStableDataV4() : StableDataV4 = {
-    registry = null;
-    quoteReserve = 0;
-    synchronizedTransactions = 0;
-  };
-
-  public func migrateStableDataV4(data : StableDataV3) : StableDataV4 = {
-    registry = List.map<(Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread : (value : Float, bias : Float) }), (Text, MarketMaker.MarketPair)>(
-      data.registry,
-      func(t, x) = (
-        t,
-        {
-          base = x.base;
-          var base_credits = x.base_credits;
-          var quote_credits = x.quote_credits;
-          var strategy = [(x.spread, 1.0)];
-        },
-      ),
-    );
-    quoteReserve = data.quoteReserve;
-    synchronizedTransactions = data.synchronizedTransactions;
-  };
-
-  public type StableDataV3 = {
-    registry : AssocList.AssocList<Text, { base : MarketMaker.TokenDescription; var base_credits : Nat; var quote_credits : Nat; var spread : (value : Float, bias : Float) }>;
-    quoteReserve : Nat;
-    synchronizedTransactions : Nat;
-  };
-
-  public func defaultStableDataV3() : StableDataV3 = {
-    registry = null;
+  public func defaultStableDataV5() : StableDataV5 = {
+    registry = Map.empty();
     quoteReserve = 0;
     synchronizedTransactions = 0;
   };
@@ -62,7 +33,7 @@ module TradingPairsRegistry {
 
     var quote : ?MarketMaker.TokenDescription = null;
 
-    var registry : AssocList.AssocList<Text, MarketMaker.MarketPair> = null;
+    var registry : Map.Map<Text, MarketMaker.MarketPair> = Map.empty();
     public var quoteReserve : Nat = 0;
     // amount of seen transaction history items
     var synchronizedTransactions : Nat = 0;
@@ -79,10 +50,10 @@ module TradingPairsRegistry {
       total;
     };
 
-    public func nPairs() : Nat = List.size(registry);
+    public func nPairs() : Nat = Map.size(registry);
 
     public func getPairs() : [MarketMaker.MarketPair] {
-      let items = List.toArray(registry);
+      let items = Map.toArray(registry);
       Array.tabulate<MarketMaker.MarketPair>(
         items.size(),
         func(i : Nat) : MarketMaker.MarketPair = items[i].1,
@@ -90,11 +61,11 @@ module TradingPairsRegistry {
     };
 
     public func getPair(baseSymbol : Text) : ?MarketMaker.MarketPair {
-      AssocList.find<Text, MarketMaker.MarketPair>(registry, baseSymbol, Text.equal);
+      Map.get<Text, MarketMaker.MarketPair>(registry, Text.compare, baseSymbol);
     };
 
     public func getPairByLedger(ledger : Principal) : ?MarketMaker.MarketPair {
-      for ((_, pair) in List.toIter(registry)) {
+      for (pair in Map.values(registry)) {
         if (Principal.equal(pair.base.principal, ledger)) {
           return ?pair;
         };
@@ -106,7 +77,7 @@ module TradingPairsRegistry {
       let quote_token = await* auction.getQuoteToken();
       let supported_tokens = await* auction.getSupportedTokens();
       let tokens_info = Tokens.getTokensInfo();
-      let quote_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, quote_token, Principal.equal, "Error get quote token info");
+      let quote_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, quote_token, Principal.compare, "Error get quote token info");
       quote := ?{
         principal = quote_token;
         symbol = quote_token_info.symbol;
@@ -115,9 +86,9 @@ module TradingPairsRegistry {
 
       for (token in supported_tokens.vals()) {
         if (not Principal.equal(token, quote_token)) {
-          switch (AssocList.find(tokens_info, token, Principal.equal)) {
+          switch (Map.get(tokens_info, Principal.compare, token)) {
             case (?_) {
-              let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.equal, "Error get base token info");
+              let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.compare, "Error get base token info");
               let pair : MarketMaker.MarketPair = {
                 base = {
                   principal = token;
@@ -129,16 +100,12 @@ module TradingPairsRegistry {
                 var strategy = default_strategy;
               };
 
-              let (upd, oldValue) = AssocList.replace<Text, MarketMaker.MarketPair>(
+              Map.add<Text, MarketMaker.MarketPair>(
                 registry,
+                Text.compare,
                 pair.base.symbol,
-                Text.equal,
-                ?pair,
+                pair,
               );
-              switch (oldValue) {
-                case (?_) {};
-                case (null) registry := upd;
-              };
             };
             case (_) {};
           };
@@ -173,10 +140,10 @@ module TradingPairsRegistry {
       replayTransactionHistoryLock := true;
 
       try {
-        let pairs : [(Text, MarketMaker.MarketPair)] = List.toArray(registry);
+        let pairs : [(Text, MarketMaker.MarketPair)] = Map.toArray(registry);
         let basePrincipals = Array.map<(Text, MarketMaker.MarketPair), Principal>(pairs, func(_, x) = x.base.principal);
-        let quoteBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
-        let baseBalances = Array.tabulateVar<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
+        let quoteBalances = VarArray.tabulate<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
+        let baseBalances = VarArray.tabulate<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
 
         var processedTransactions = synchronizedTransactions;
         var sessionNumber : Nat = 0;
@@ -213,7 +180,7 @@ module TradingPairsRegistry {
             };
           };
           for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
-            switch (Array.indexOf<Principal>(token, basePrincipals, Principal.equal)) {
+            switch (Array.indexOf<Principal>(basePrincipals, Principal.equal, token)) {
               case (null) {};
               case (?tokenIdx) {
                 switch (kind) {
@@ -233,8 +200,8 @@ module TradingPairsRegistry {
           if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
         };
         Debug.print("Transactions history replayed (" # debug_show (processedTransactions - synchronizedTransactions : Nat) # " items). Applying credits..");
-        for ((_, pair) in List.toIter(registry)) {
-          switch (Array.indexOf<Principal>(pair.base.principal, basePrincipals, Principal.equal)) {
+        for (pair in Map.values(registry)) {
+          switch (Array.indexOf<Principal>(basePrincipals, Principal.equal, pair.base.principal)) {
             case (null) {};
             case (?tokenIdx) {
               pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
@@ -250,13 +217,13 @@ module TradingPairsRegistry {
 
         // refresh credits
         // calculate quote credits reserve, update values in the registry
-        var creditsMap : List.List<(Principal, Nat)> = null;
+        let creditsMap : Map.Map<Principal, Nat> = Map.empty();
         for (credit in credits.vals()) {
-          creditsMap := List.push<(Principal, Nat)>((credit.0, credit.1.total), creditsMap);
+          Map.add(creditsMap, Principal.compare, credit.0, credit.1.total);
         };
-        var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(creditsMap, quoteInfo().principal, Principal.equal, 0);
-        for ((_, pair) in List.toIter(registry)) {
-          pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(creditsMap, pair.base.principal, Principal.equal, 0);
+        var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(creditsMap, quoteInfo().principal, Principal.compare, 0);
+        for (pair in Map.values(registry)) {
+          pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(creditsMap, pair.base.principal, Principal.compare, 0);
           if (pair.quote_credits > 0) {
             if (quoteFreeCredits <= pair.quote_credits) {
               pair.quote_credits := quoteFreeCredits;
@@ -274,11 +241,11 @@ module TradingPairsRegistry {
       };
     };
 
-    public func share() : StableDataV4 {
+    public func share() : StableDataV5 {
       { registry; quoteReserve; synchronizedTransactions };
     };
 
-    public func unshare(data : StableDataV4) {
+    public func unshare(data : StableDataV5) {
       registry := data.registry;
       quoteReserve := data.quoteReserve;
       synchronizedTransactions := data.synchronizedTransactions;

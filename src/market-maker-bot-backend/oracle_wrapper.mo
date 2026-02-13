@@ -4,18 +4,18 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Array "mo:base/Array";
-import AssocList "mo:base/AssocList";
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import LegacyList "mo:base/List";
-import Nat "mo:base/Nat";
-import Nat32 "mo:base/Nat32";
-import Nat64 "mo:base/Nat64";
+import Array "mo:core/Array";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Map "mo:core/Map";
+import Nat "mo:core/Nat";
+import Nat32 "mo:core/Nat32";
+import Nat64 "mo:core/Nat64";
 import Prim "mo:prim";
-import Principal "mo:base/Principal";
-import Text "mo:base/Text";
+import Principal "mo:core/Principal";
+import Text "mo:core/Text";
+import VarArray "mo:core/VarArray";
 
 import List "mo:core/List";
 
@@ -30,17 +30,15 @@ module {
     // error did not already happen CACHE_TTL times in a row
     let CACHE_TTL = 2;
 
-    var ratesCache : AssocList.AssocList<Text, { rate : Float; var ttl : Nat }> = LegacyList.nil();
+    let ratesCache : Map.Map<Text, { rate : Float; var ttl : Nat }> = Map.empty();
     private func cacheRate(symbol : Text, rate : Float) {
-      let (upd, _) = AssocList.replace(ratesCache, symbol, Text.equal, ?{ rate; var ttl = CACHE_TTL });
-      ratesCache := upd;
+      Map.add(ratesCache, Text.compare, symbol, { rate; var ttl = CACHE_TTL });
     };
     private func popCachedRate(symbol : Text) : ?Float {
-      let ?entry = AssocList.find(ratesCache, symbol, Text.equal) else return null;
+      let ?entry = Map.get(ratesCache, Text.compare, symbol) else return null;
       entry.ttl -= 1;
       if (entry.ttl == 0) {
-        let (upd, _) = AssocList.replace(ratesCache, symbol, Text.equal, null);
-        ratesCache := upd;
+        Map.remove(ratesCache, Text.compare, symbol);
       };
       ?entry.rate;
     };
@@ -69,7 +67,7 @@ module {
       #Err : { #ErrorGetRates : Text };
     }] {
       Debug.print("Fetching rates..");
-      var res = Array.init<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(baseSymbols.size(), #Err(#ErrorGetRates("N/A")));
+      let res = VarArray.repeat<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(#Err(#ErrorGetRates("N/A")), baseSymbols.size());
 
       // define call info
       let xrcCalls : List.List<(i : Nat, async OracleDefinitions.GetExchangeRateResult)> = List.empty();
@@ -247,7 +245,7 @@ module {
         };
       };
       Debug.print("Rates fetched: " # debug_show res);
-      Array.freeze(res);
+      Array.fromVarArray(res);
     };
   };
 };

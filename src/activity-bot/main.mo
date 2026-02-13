@@ -1,27 +1,27 @@
-import Array "mo:base/Array";
-import Blob "mo:base/Blob";
-import Bool "mo:base/Bool";
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
-import Int32 "mo:base/Int32";
-import Iter "mo:base/Iter";
-import Nat "mo:base/Nat";
-import Nat8 "mo:base/Nat8";
-import Prim "mo:prim";
-import Principal "mo:base/Principal";
-import RBTree "mo:base/RBTree";
-import Text "mo:base/Text";
-import Timer "mo:base/Timer";
-
+import Array "mo:core/Array";
+import Blob "mo:core/Blob";
+import Bool "mo:core/Bool";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+import Int32 "mo:core/Int32";
+import Iter "mo:core/Iter";
 import List "mo:core/List";
+import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
+import Prim "mo:prim";
+import Principal "mo:core/Principal";
+import Text "mo:core/Text";
+import Timer "mo:core/Timer";
 
 import PT "../promtracker";
 
+import AdminsMixin "../mixins/admins_mixin";
+import PtHttp "../promtracker/mixins/http";
+
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
-import HTTP "../market-maker-bot-backend/http";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import TPR "../market-maker-bot-backend/trading_pairs_registry";
@@ -30,6 +30,8 @@ import U "../market-maker-bot-backend/utils";
 import HistoryModule "./history";
 
 persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
+
+  include AdminsMixin();
 
   if (activityBotMode > 1) {
     Prim.trap("Unknown activity bot mode");
@@ -44,7 +46,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     case (_) Prim.trap("Oracle principal not provided");
   };
 
-  var tradingPairsDataV4 : TPR.StableDataV4 = TPR.defaultStableDataV4();
+  var tradingPairsDataV5 : TPR.StableDataV5 = TPR.defaultStableDataV5();
 
   let history_V4 : List.List<HistoryModule.HistoryItemTypeV4> = List.empty();
 
@@ -65,22 +67,12 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   transient var supported_tokens : [Principal] = [];
   /// End Bot state flags and variables
 
-  var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
-  switch (RBTree.size(stableAdminsMap)) {
-    case (0) {
-      let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
-      adminsMap.put(Principal.fromText("2vxsx-fae"), ());
-      stableAdminsMap := adminsMap.share();
-    };
-    case (_) {};
-  };
-  transient let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
-  adminsMap.unshare(stableAdminsMap);
-
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
   transient let metrics = PT.PromTracker(PT.canisterLabel(self));
+  include PtHttp(metrics, "/metrics");
+
   metrics.addSystemValues();
   ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
   ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
@@ -112,7 +104,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     try {
       is_initializing := true;
       Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      tradingPairs.unshare(tradingPairsDataV4);
+      tradingPairs.unshare(tradingPairsDataV5);
       let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
@@ -141,20 +133,11 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     supported_tokens : [Principal];
   };
 
-  public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
-    let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
-    switch (req.method, path, is_initialized) {
-      case ("GET", "/metrics", true) metrics.renderExposition() |> HTTP.renderPlainText(_);
-      case (_) HTTP.render400();
-    };
-  };
-
   system func preupgrade() {
     Debug.print("Preupgrade");
     if (is_initialized) {
-      tradingPairsDataV4 := tradingPairs.share();
+      tradingPairsDataV5 := tradingPairs.share();
     };
-    stableAdminsMap := adminsMap.share();
   };
 
   system func postupgrade() {
@@ -169,29 +152,6 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         };
       },
     );
-  };
-
-  public query func listAdmins() : async [Principal] = async adminsMap.entries()
-  |> Iter.map<(Principal, ()), Principal>(_, func((p, _)) = p)
-  |> Iter.toArray(_);
-
-  private func assertAdminAccess(principal : Principal) : async* () {
-    if (adminsMap.get(principal) == null) {
-      throw Error.reject("No Access for this principal " # Principal.toText(principal));
-    };
-  };
-
-  public shared ({ caller }) func addAdmin(principal : Principal) : async () {
-    await* assertAdminAccess(caller);
-    adminsMap.put(principal, ());
-  };
-
-  public shared ({ caller }) func removeAdmin(principal : Principal) : async () {
-    if (Principal.equal(principal, caller)) {
-      throw Error.reject("Cannot remove yourself from admins");
-    };
-    await* assertAdminAccess(caller);
-    adminsMap.delete(principal);
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {

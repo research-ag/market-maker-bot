@@ -4,7 +4,7 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Option "mo:base/Option";
+import Option "mo:core/Option";
 actor CustomXRC {
   public type Asset = { class_ : AssetClass; symbol : Text };
   public type AssetClass = { #Cryptocurrency; #FiatCurrency };
