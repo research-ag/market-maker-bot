@@ -1,5 +1,6 @@
 [dependencies]
 core = "2.0.0"
+promtracker = "https://github.com/research-ag/promtracker#feature/pull-value-convenience-functions@3c454128094183b136e27eeb6eb628fd442d633a"
 
 [toolchain]
 moc = "1.1.0"

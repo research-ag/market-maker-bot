@@ -20,10 +20,10 @@ import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
-import PT "../promtracker";
+import PT "mo:promtracker";
+import PtHttp "mo:promtracker/mixins/http";
 
 import AdminsMixin "../mixins/admins_mixin";
-import PtHttp "../promtracker/mixins/http";
 
 import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
@@ -63,41 +63,56 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  transient let metrics = PT.PromTracker(PT.canisterLabel(self));
-  include PtHttp(metrics, "/metrics");
+  let pt = PT.new();
+  transient let renderer = PT.Renderer(pt);
+  renderer.addCanisterLabel(self);
+  include PtHttp(renderer.renderExposition, "/metrics");
 
-  metrics.addSystemValues();
-  ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
-  ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
-  ignore metrics.addPullValue("quote_reserve", [], tradingPairs.getQuoteReserve);
-  ignore metrics.addPullValue("history_length", [], func() = List.size(history_V4));
+  ignore renderer.addPullValue(PT.allSystemMetrics);
+  ignore renderer.addPullValue(
+    PT.bundle(
+      [],
+      [
+        PT.newPullValue("bot_timer_interval", [], func() = bot_timer_interval),
+        PT.newPullValue("running", [], func() = if (is_running) { 1 } else { 0 }),
+        PT.newPullValue("quote_reserve", [], tradingPairs.getQuoteReserve),
+        PT.newPullValue("history_length", [], func() = List.size(history_V4)),
+      ],
+    )
+  );
 
-  transient var tradingPairStrategyMetrics : List.List<[(PT.PullValue, PT.PullValue, PT.PullValue)]> = List.empty();
+  transient var tradingPairStrategyMetrics : ?Nat = null;
   func updateTradingPairsMetrics() {
     // remove existing metrics
-    for (v in List.values(tradingPairStrategyMetrics)) {
-      for (x in v.vals()) {
-        x.0.remove();
-        x.1.remove();
-        x.2.remove();
-      };
+    switch (tradingPairStrategyMetrics) {
+      case (?m) renderer.removePullValue(m);
+      case (null) {};
     };
-    tradingPairStrategyMetrics := List.empty();
     // register metrics
     let pairs = tradingPairs.getPairs();
-    for (i in pairs.keys()) {
-      let pair = func() : MarketMaker.MarketPair = tradingPairs.getPairs()[i];
-      let lbl = func(index : Nat) : PT.Labels = [("base", pair().base.symbol), ("index", Nat.toText(index))];
-      let mtr = Array.tabulate<(PT.PullValue, PT.PullValue, PT.PullValue)>(
-        pairs[i].strategy.size(),
-        func(j) = (
-          metrics.addPullValue("spread_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(0.5 + _.strategy[j].0.0 * 10000))),
-          metrics.addPullValue("spread_base_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(0.5 + (1.0 + _.strategy[j].0.1) * 10000))),
-          metrics.addPullValue("spread_weight_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(_.strategy[j].1 * 10000))),
+
+    tradingPairStrategyMetrics := ?renderer.addPullValue(
+      PT.bundle(
+        [],
+        Array.map(
+          pairs,
+          func(pair) = PT.bundle(
+            [("base", pair.base.symbol)],
+            Array.tabulate(
+              pair.strategy.size(),
+              func(j) = PT.bundle(
+                [("index", Nat.toText(j))],
+                [
+                  PT.newPullValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[j].0.0 * 10000))),
+                  PT.newPullValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[j].0.1) * 10000))),
+                  PT.newPullValue("spread_weight_bips", [], func() = Int.abs(Float.toInt(pair.strategy[j].1 * 10000))),
+                ],
+              ),
+            ),
+          ),
         ),
-      );
-      List.add(tradingPairStrategyMetrics, mtr);
-    };
+      )
+    );
   };
 
   func getState() : (BotState) {
@@ -131,11 +146,17 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        let labels = [("base", pair.base.symbol)];
-
-        ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
-        ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
+        ignore renderer.addPullValue(
+          PT.bundle(
+            [("base", pair.base.symbol)],
+            [
+              PT.newPullValue("base_credits", [], func() = pair.base_credits),
+              PT.newPullValue("quote_credits", [], func() = pair.quote_credits),
+            ],
+          )
+        );
       };
+
       updateTradingPairsMetrics();
       is_initializing := false;
       is_initialized := true;

@@ -15,10 +15,10 @@ import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
-import PT "../promtracker";
+import PT "mo:promtracker";
+import PtHttp "mo:promtracker/mixins/http";
 
 import AdminsMixin "../mixins/admins_mixin";
-import PtHttp "../promtracker/mixins/http";
 
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
@@ -70,14 +70,23 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  transient let metrics = PT.PromTracker(PT.canisterLabel(self));
-  include PtHttp(metrics, "/metrics");
+  let pt = PT.new();
+  transient let renderer = PT.Renderer(pt);
+  renderer.addCanisterLabel(self);
+  include PtHttp(renderer.renderExposition, "/metrics");
 
-  metrics.addSystemValues();
-  ignore metrics.addPullValue("bot_timer_interval", [], func() = bot_timer_interval);
-  ignore metrics.addPullValue("running", [], func() = if (is_running) { 1 } else { 0 });
-  ignore metrics.addPullValue("quote_credits", [], tradingPairs.getTotalQuoteCredits);
-  ignore metrics.addPullValue("history_length", [], func() = List.size(history_V4));
+  ignore renderer.addPullValue(PT.allSystemMetrics);
+  ignore renderer.addPullValue(
+    PT.bundle(
+      [],
+      [
+        PT.newPullValue("bot_timer_interval", [], func() = bot_timer_interval),
+        PT.newPullValue("running", [], func() = if (is_running) { 1 } else { 0 }),
+        PT.newPullValue("quote_credits", [], tradingPairs.getTotalQuoteCredits),
+        PT.newPullValue("history_length", [], func() = List.size(history_V4)),
+      ],
+    )
+  );
 
   func getState() : (BotState) {
     {
@@ -110,11 +119,16 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        let labels = [("base", pair.base.symbol)];
-
-        ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
-        ignore metrics.addPullValue("spread_bips", labels, func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000)));
-        ignore metrics.addPullValue("spread_base_bips", labels, func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[0].0.1) * 10000)));
+        ignore renderer.addPullValue(
+          PT.bundle(
+            [("base", pair.base.symbol)],
+            [
+              PT.newPullValue("base_credits", [], func() = pair.base_credits),
+              PT.newPullValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000))),
+              PT.newPullValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[0].0.1) * 10000))),
+            ],
+          )
+        );
       };
       is_initializing := false;
       is_initialized := true;
