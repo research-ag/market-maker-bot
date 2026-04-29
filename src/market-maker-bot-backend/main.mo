@@ -21,12 +21,14 @@ import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
 import PT "mo:promtracker";
+import { Tracker } "mo:promtracker";
 import PtHttp "mo:promtracker/mixins/http";
 
 import AdminsMixin "../mixins/admins_mixin";
 
 import Auction "./auction_definitions";
 import AuctionWrapper "./auction_wrapper";
+import CircularBuffer "./CircularBuffer";
 import HistoryModule "./history";
 import MarketMaker "./market_maker";
 import OracleWrapper "./oracle_wrapper";
@@ -42,7 +44,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
 
   var tradingPairsDataV5 : TPR.StableDataV5 = TPR.defaultStableDataV5();
 
-  let history_V4 : List.List<HistoryModule.HistoryItemTypeV4> = List.empty();
+  let history : CircularBuffer.CircularBuffer<HistoryModule.HistoryItemTypeV4> = CircularBuffer.new(65536);
 
   transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
@@ -63,55 +65,44 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  let pt = PT.new();
-  transient let renderer = PT.Renderer(pt);
+  transient let pt = PT.Tracker.new();
+  transient let renderer = PT.Renderer();
+  renderer.addValue(pt.toValue());
   renderer.addCanisterLabel(self);
   include PtHttp(renderer.renderExposition, "/metrics");
 
-  ignore renderer.addPullValue(PT.allSystemMetrics);
-  ignore renderer.addPullValue(
-    PT.bundle(
-      [],
-      [
-        PT.newPullValue("bot_timer_interval", [], func() = bot_timer_interval),
-        PT.newPullValue("running", [], func() = if (is_running) { 1 } else { 0 }),
-        PT.newPullValue("quote_reserve", [], tradingPairs.getQuoteReserve),
-        PT.newPullValue("history_length", [], func() = List.size(history_V4)),
-      ],
-    )
+  renderer.addValue(PT.allSystemMetrics);
+  renderer.addValue(
+    [
+      PT.newValue("bot_timer_interval", [], func() = bot_timer_interval),
+      PT.newValue("running", [], func() = if (is_running) { 1 } else { 0 }),
+      PT.newValue("quote_reserve", [], tradingPairs.getQuoteReserve),
+      PT.newValue("history_length", [], func() = history.size()),
+    ].bundle([])
   );
 
   transient var tradingPairStrategyMetrics : ?Nat = null;
   func updateTradingPairsMetrics() {
     // remove existing metrics
     switch (tradingPairStrategyMetrics) {
-      case (?m) renderer.removePullValue(m);
+      case (?m) renderer.removeValue(m);
       case (null) {};
     };
     // register metrics
     let pairs = tradingPairs.getPairs();
 
-    tradingPairStrategyMetrics := ?renderer.addPullValue(
-      PT.bundle(
-        [],
-        Array.map(
-          pairs,
-          func(pair) = PT.bundle(
-            [("base", pair.base.symbol)],
-            Array.tabulate(
-              pair.strategy.size(),
-              func(j) = PT.bundle(
-                [("index", Nat.toText(j))],
-                [
-                  PT.newPullValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[j].0.0 * 10000))),
-                  PT.newPullValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[j].0.1) * 10000))),
-                  PT.newPullValue("spread_weight_bips", [], func() = Int.abs(Float.toInt(pair.strategy[j].1 * 10000))),
-                ],
-              ),
-            ),
-          ),
-        ),
-      )
+    tradingPairStrategyMetrics := ?renderer.addValueRef(
+      Array.map(
+        pairs,
+        func(pair) = Array.tabulate(
+          pair.strategy.size(),
+          func(j) = [
+            PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[j].0.0 * 10000))),
+            PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[j].0.1) * 10000))),
+            PT.newValue("spread_weight_bips", [], func() = Int.abs(Float.toInt(pair.strategy[j].1 * 10000))),
+          ].bundle([("index", Nat.toText(j))]),
+        ).bundle([("base", pair.base.symbol)]),
+      ).bundle([])
     );
   };
 
@@ -146,14 +137,11 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        ignore renderer.addPullValue(
-          PT.bundle(
-            [("base", pair.base.symbol)],
-            [
-              PT.newPullValue("base_credits", [], func() = pair.base_credits),
-              PT.newPullValue("quote_credits", [], func() = pair.quote_credits),
-            ],
-          )
+        renderer.addValue(
+          [
+            PT.newValue("base_credits", [], func() = pair.base_credits),
+            PT.newValue("quote_credits", [], func() = pair.quote_credits),
+          ].bundle([("base", pair.base.symbol)])
         );
       };
 
@@ -199,7 +187,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
-    List.add(history_V4, historyItem);
+    history.add(historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -228,9 +216,9 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   };
 
   public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV4]) {
-    var iter = List.reverseValues<HistoryModule.HistoryItemTypeV4>(history_V4);
+    var iter = history.reverseAvailableValues();
     switch (token) {
-      case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV4>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
+      case (?t) iter := iter.filter(func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
     };
     U.sliceIter(iter, limit, skip);

@@ -16,12 +16,14 @@ import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
 import PT "mo:promtracker";
+import { Tracker } "mo:promtracker";
 import PtHttp "mo:promtracker/mixins/http";
 
 import AdminsMixin "../mixins/admins_mixin";
 
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
+import CircularBuffer "../market-maker-bot-backend/CircularBuffer";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import TPR "../market-maker-bot-backend/trading_pairs_registry";
@@ -48,7 +50,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
   var tradingPairsDataV5 : TPR.StableDataV5 = TPR.defaultStableDataV5();
 
-  let history_V4 : List.List<HistoryModule.HistoryItemTypeV4> = List.empty();
+  let history : CircularBuffer.CircularBuffer<HistoryModule.HistoryItemTypeV4> = CircularBuffer.new(65536);
 
   transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
@@ -70,22 +72,20 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  let pt = PT.new();
-  transient let renderer = PT.Renderer(pt);
+  transient let pt = PT.Tracker.new();
+  transient let renderer = PT.Renderer();
+  renderer.addValue(pt.toValue());
   renderer.addCanisterLabel(self);
   include PtHttp(renderer.renderExposition, "/metrics");
 
-  ignore renderer.addPullValue(PT.allSystemMetrics);
-  ignore renderer.addPullValue(
-    PT.bundle(
-      [],
-      [
-        PT.newPullValue("bot_timer_interval", [], func() = bot_timer_interval),
-        PT.newPullValue("running", [], func() = if (is_running) { 1 } else { 0 }),
-        PT.newPullValue("quote_credits", [], tradingPairs.getTotalQuoteCredits),
-        PT.newPullValue("history_length", [], func() = List.size(history_V4)),
-      ],
-    )
+  renderer.addValue(PT.allSystemMetrics);
+  renderer.addValue(
+    [
+      PT.newValue("bot_timer_interval", [], func() = bot_timer_interval),
+      PT.newValue("running", [], func() = if (is_running) { 1 } else { 0 }),
+      PT.newValue("quote_credits", [], tradingPairs.getTotalQuoteCredits),
+      PT.newValue("history_length", [], func() = history.size()),
+    ].bundle([])
   );
 
   func getState() : (BotState) {
@@ -119,15 +119,12 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       quote_token := ?qp;
       supported_tokens := sp;
       for (pair in tradingPairs.getPairs().vals()) {
-        ignore renderer.addPullValue(
-          PT.bundle(
-            [("base", pair.base.symbol)],
-            [
-              PT.newPullValue("base_credits", [], func() = pair.base_credits),
-              PT.newPullValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000))),
-              PT.newPullValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[0].0.1) * 10000))),
-            ],
-          )
+        renderer.addValue(
+          [
+            PT.newValue("base_credits", [], func() = pair.base_credits),
+            PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000))),
+            PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[0].0.1) * 10000))),
+          ].bundle([("base", pair.base.symbol)])
         );
       };
       is_initializing := false;
@@ -171,7 +168,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, rate, message);
-    List.add(history_V4, historyItem);
+    history.add(historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -200,9 +197,9 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   };
 
   public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV4]) {
-    var iter = List.reverseValues<HistoryModule.HistoryItemTypeV4>(history_V4);
+    var iter = history.reverseAvailableValues();
     switch (token) {
-      case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV4>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
+      case (?t) iter := iter.filter(func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
     };
     U.sliceIter(iter, limit, skip);

@@ -117,7 +117,7 @@ module TradingPairsRegistry {
 
     public func setQuoteBalance(auction : AuctionWrapper.Self, baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async* Nat {
       let ?pair = getPair(baseSymbol) else throw Error.reject("Trading pair not found");
-      var balanceInc : Int = switch (balance) {
+      let balanceInc : Int = switch (balance) {
         case (#set x) {
           ignore await* replayTransactionHistory(auction);
           x - pair.quote_credits;
