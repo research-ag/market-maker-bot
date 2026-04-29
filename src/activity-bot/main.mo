@@ -16,7 +16,6 @@ import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
 import PT "mo:promtracker";
-import { Tracker } "mo:promtracker";
 import PtHttp "mo:promtracker/mixins/http";
 
 import AdminsMixin "../mixins/admins_mixin";
@@ -72,9 +71,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
-  transient let pt = PT.Tracker.new();
   transient let renderer = PT.Renderer();
-  renderer.addValue(pt.toValue());
   renderer.addCanisterLabel(self);
   include PtHttp(renderer.renderExposition, "/metrics");
 
