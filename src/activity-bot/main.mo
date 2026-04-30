@@ -9,6 +9,7 @@ import Iter "mo:core/Iter";
 import List "mo:core/List";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
+import Option "mo:core/Option";
 import Principal "mo:core/Principal";
 import Timer "mo:core/Timer";
 
@@ -24,7 +25,7 @@ import CircularBuffer "../market-maker-bot-backend/CircularBuffer";
 import HistoryModule "history";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
-import TPR "../market-maker-bot-backend/trading_pairs_registry";
+import TradingPairsRegistry "../market-maker-bot-backend/trading_pairs_registry";
 import U "../market-maker-bot-backend/utils";
 
 persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
@@ -44,27 +45,20 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     case (_) Prim.trap("Oracle principal not provided");
   };
 
-  var tradingPairsDataV5 : TPR.StableDataV5 = TPR.defaultStableDataV5();
-
+  var bot_timer_interval : Nat = 6 * 60;
+  var is_running : Bool = false;
+  var quote_token : ?Principal = null;
+  var supported_tokens : [Principal] = [];
+  let tradingPairs : TradingPairsRegistry.TradingPairsRegistry = TradingPairsRegistry.new();
   let history : CircularBuffer.CircularBuffer<HistoryModule.HistoryItemTypeV4> = CircularBuffer.new(65536);
 
-  transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   transient let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
   transient let default_strategy : MarketMaker.MarketPairStrategy = [((0.1, 0.0), 1.0)];
 
   transient var bot_timer : Timer.TimerId = 0;
 
-  /// Bot state flags and variables
-  var bot_timer_interval : Nat = 6 * 60;
-  var is_running : Bool = false;
-
-  transient var is_initialized : Bool = false;
   transient var is_initializing : Bool = false;
-  transient var quote_token : ?Principal = null;
-  transient var supported_tokens : [Principal] = [];
-  /// End Bot state flags and variables
-
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
@@ -77,16 +71,38 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     [
       PT.newValue("bot_timer_interval", [], func() = bot_timer_interval),
       PT.newValue("running", [], func() = if (is_running) { 1 } else { 0 }),
-      PT.newValue("quote_credits", [], tradingPairs.getTotalQuoteCredits),
+      PT.newValue("quote_credits", [], func() = tradingPairs.getTotalQuoteCredits()),
       PT.newValue("history_length", [], func() = history.size()),
     ].bundle([])
   );
+
+  transient var tradingPairStrategyMetrics : ?Nat = null;
+  func updateTradingPairsMetrics() {
+    // remove existing metrics
+    switch (tradingPairStrategyMetrics) {
+      case (?m) renderer.removeValue(m);
+      case (null) {};
+    };
+    // register metrics
+    tradingPairStrategyMetrics := ?renderer.addValueRef(
+      tradingPairs.getPairs().map(
+        func(pair) = Array.tabulate(
+          pair.strategy.size(),
+          func(j) = [
+            PT.newValue("base_credits", [], func() = pair.base_credits),
+            PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000))),
+            PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[0].0.1) * 10000))),
+          ].bundle([("index", j.toText())]),
+        ).bundle([("base", pair.base.symbol)])
+      ).bundle([])
+    );
+  };
 
   func getState() : (BotState) {
     {
       timer_interval = bot_timer_interval;
       running = is_running;
-      initialized = is_initialized;
+      initialized = Option.isSome(quote_token);
       initializing = is_initializing;
       quote_token = quote_token;
       supported_tokens = supported_tokens;
@@ -98,31 +114,19 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     #Err : ({
       #UnknownQuoteTokenError;
       #InitializingInProgressError;
-      #AlreadyInitializedError;
       #UnknownError;
     });
   } {
     if (is_initializing) return #Err(#InitializingInProgressError);
-    if (is_initialized) return #Err(#AlreadyInitializedError);
 
     try {
       is_initializing := true;
       Debug.print("Init bot: " # auction_principal.toText() # " " # oracle_principal.toText());
-      tradingPairs.unshare(tradingPairsDataV5);
-      let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
+      let (qp, sp) = await* TradingPairsRegistry.initTokens(tradingPairs, auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
-      for (pair in tradingPairs.getPairs().vals()) {
-        renderer.addValue(
-          [
-            PT.newValue("base_credits", [], func() = pair.base_credits),
-            PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[0].0.0 * 10000))),
-            PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[0].0.1) * 10000))),
-          ].bundle([("base", pair.base.symbol)])
-        );
-      };
+      updateTradingPairsMetrics();
       is_initializing := false;
-      is_initialized := true;
       #Ok(getState());
     } catch (_) {
       is_initializing := false;
@@ -139,25 +143,15 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     supported_tokens : [Principal];
   };
 
-  system func preupgrade() {
-    Debug.print("Preupgrade");
-    if (is_initialized) {
-      tradingPairsDataV5 := tradingPairs.share();
-    };
-  };
+  system func preupgrade() {};
 
   system func postupgrade() {
     Debug.print("Postupgrade");
-    ignore Timer.setTimer<system>(
-      #seconds(0),
-      func() : async () {
-        Debug.print("Init fired");
-        ignore await init();
-        if (is_running) {
-          runTimer<system>();
-        };
-      },
-    );
+    tradingPairs.replayTransactionHistoryLock := false;
+    updateTradingPairsMetrics();
+    if (is_running) {
+      runTimer<system>();
+    };
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
@@ -208,17 +202,12 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   public shared ({ caller }) func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
     #Err : ({
-      #NotInitializedError;
       #AlreadyStartedError;
     });
   } {
     await* assertAdminAccess(caller);
     assert not system_lock;
     Debug.print("Start bot");
-
-    if (is_initialized == false) {
-      return #Err(#NotInitializedError);
-    };
 
     if (is_running == true) {
       return #Err(#AlreadyStartedError);
@@ -242,17 +231,12 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   public shared ({ caller }) func stopBot() : async {
     #Ok : (BotState);
     #Err : ({
-      #NotInitializedError;
       #AlreadyStopedError;
       #CancelOrdersError;
     });
   } {
     await* assertAdminAccess(caller);
     Debug.print("Stop bot");
-
-    if (is_initialized == false) {
-      return #Err(#NotInitializedError);
-    };
 
     if (is_running == false) {
       return #Err(#AlreadyStopedError);
@@ -320,18 +304,16 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          calls.add(
-            (
-              token,
-              src.icrc84_withdraw({
-                to = { owner = dest_auction; subaccount = ?destSubaccount };
-                amount = acc.available;
-                token;
-                expected_fee = null;
-              }),
-              tradingPairs.getPairByLedger(token),
-            ),
-          );
+          calls.add((
+            token,
+            src.icrc84_withdraw({
+              to = { owner = dest_auction; subaccount = ?destSubaccount };
+              amount = acc.available;
+              token;
+              expected_fee = null;
+            }),
+            tradingPairs.getPairByLedger(token),
+          ));
         };
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
@@ -380,21 +362,19 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       try {
         for ((token, acc) in credits.vals()) {
           if (not Principal.equal(token, qt)) {
-            calls.add(
-              (
-                token,
-                auction.icrc84_withdraw({
-                  to = {
-                    owner = auction_principal;
-                    subaccount = ?destSubaccount;
-                  };
-                  amount = acc.available;
-                  token;
-                  expected_fee = null;
-                }),
-                tradingPairs.getPairByLedger(token),
-              ),
-            );
+            calls.add((
+              token,
+              auction.icrc84_withdraw({
+                to = {
+                  owner = auction_principal;
+                  subaccount = ?destSubaccount;
+                };
+                amount = acc.available;
+                token;
+                expected_fee = null;
+              }),
+              tradingPairs.getPairByLedger(token),
+            ));
           };
         };
       } catch (err) {
@@ -421,7 +401,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
   public shared func notifyQuote() : async () {
     ignore await* auction.notify([U.require(quote_token)]);
-    ignore await* tradingPairs.replayTransactionHistory(auction);
+    ignore await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
   };
 
   public shared ({ caller }) func notify(token : ?Principal) : async () {
@@ -433,7 +413,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         ignore await* auction.notify(supported_tokens);
       };
     };
-    ignore await* tradingPairs.replayTransactionHistory(auction);
+    ignore await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
   };
 
   transient var executionLock : Bool = false;
@@ -449,7 +429,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     executionLock := true;
     try {
       let pairs = tradingPairs.getPairs();
-      ignore await* tradingPairs.replayTransactionHistory(auction);
+      ignore await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
 
       let quote_token = tradingPairs.quoteInfo();
 

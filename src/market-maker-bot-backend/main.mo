@@ -15,6 +15,7 @@ import Iter "mo:core/Iter";
 import List "mo:core/List";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
+import Option "mo:core/Option";
 import Principal "mo:core/Principal";
 import Timer "mo:core/Timer";
 
@@ -29,7 +30,7 @@ import CircularBuffer "CircularBuffer";
 import HistoryModule "history";
 import MarketMaker "market_maker";
 import OracleWrapper "oracle_wrapper";
-import TPR "trading_pairs_registry";
+import TradingPairsRegistry "trading_pairs_registry";
 import U "utils";
 
 persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
@@ -39,26 +40,20 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   let auction_principal : Principal = auction_be_;
   let oracle_principal : Principal = oracle_be_;
 
-  var tradingPairsDataV5 : TPR.StableDataV5 = TPR.defaultStableDataV5();
-
+  var bot_timer_interval : Nat = 6 * 60;
+  var is_running : Bool = false;
+  var quote_token : ?Principal = null;
+  var supported_tokens : [Principal] = [];
+  let tradingPairs : TradingPairsRegistry.TradingPairsRegistry = TradingPairsRegistry.new();
   let history : CircularBuffer.CircularBuffer<HistoryModule.HistoryItemTypeV4> = CircularBuffer.new(65536);
 
-  transient let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
   transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
   transient let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
   transient let default_strategy : MarketMaker.MarketPairStrategy = [((0.02, 0.0), 1.0)];
 
   transient var bot_timer : Timer.TimerId = 0;
 
-  /// Bot state flags and variables
-  var bot_timer_interval : Nat = 6 * 60;
-  var is_running : Bool = false;
-  transient var is_initialized : Bool = false;
   transient var is_initializing : Bool = false;
-  transient var quote_token : ?Principal = null;
-  transient var supported_tokens : [Principal] = [];
-  /// End Bot state flags and variables
-
   // a lock that prevents bot to run when set
   transient var system_lock : Bool = false;
 
@@ -71,7 +66,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     [
       PT.newValue("bot_timer_interval", [], func() = bot_timer_interval),
       PT.newValue("running", [], func() = if (is_running) { 1 } else { 0 }),
-      PT.newValue("quote_reserve", [], tradingPairs.getQuoteReserve),
+      PT.newValue("quote_reserve", [], func() = tradingPairs.getQuoteReserve()),
       PT.newValue("history_length", [], func() = history.size()),
     ].bundle([])
   );
@@ -84,19 +79,18 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       case (null) {};
     };
     // register metrics
-    let pairs = tradingPairs.getPairs();
-
     tradingPairStrategyMetrics := ?renderer.addValueRef(
-      Array.map(
-        pairs,
+      tradingPairs.getPairs().map(
         func(pair) = Array.tabulate(
           pair.strategy.size(),
           func(j) = [
+            PT.newValue("base_credits", [], func() = pair.base_credits),
+            PT.newValue("quote_credits", [], func() = pair.quote_credits),
             PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[j].0.0 * 10000))),
             PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[j].0.1) * 10000))),
             PT.newValue("spread_weight_bips", [], func() = Int.abs(Float.toInt(pair.strategy[j].1 * 10000))),
           ].bundle([("index", j.toText())]),
-        ).bundle([("base", pair.base.symbol)]),
+        ).bundle([("base", pair.base.symbol)])
       ).bundle([])
     );
   };
@@ -105,7 +99,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     {
       timer_interval = bot_timer_interval;
       running = is_running;
-      initialized = is_initialized;
+      initialized = Option.isSome(quote_token);
       initializing = is_initializing;
       quote_token = quote_token;
       supported_tokens = supported_tokens;
@@ -117,32 +111,19 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     #Err : ({
       #UnknownQuoteTokenError;
       #InitializingInProgressError;
-      #AlreadyInitializedError;
       #UnknownError;
     });
   } {
     if (is_initializing) return #Err(#InitializingInProgressError);
-    if (is_initialized) return #Err(#AlreadyInitializedError);
 
     try {
       is_initializing := true;
       Debug.print("Init bot: " # auction_principal.toText() # " " # oracle_principal.toText());
-      tradingPairs.unshare(tradingPairsDataV5);
-      let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
+      let (qp, sp) = await* TradingPairsRegistry.initTokens(tradingPairs, auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
-      for (pair in tradingPairs.getPairs().vals()) {
-        renderer.addValue(
-          [
-            PT.newValue("base_credits", [], func() = pair.base_credits),
-            PT.newValue("quote_credits", [], func() = pair.quote_credits),
-          ].bundle([("base", pair.base.symbol)])
-        );
-      };
-
       updateTradingPairsMetrics();
       is_initializing := false;
-      is_initialized := true;
       #Ok(getState());
     } catch (_) {
       is_initializing := false;
@@ -159,25 +140,15 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     supported_tokens : [Principal];
   };
 
-  system func preupgrade() {
-    Debug.print("Preupgrade");
-    if (is_initialized) {
-      tradingPairsDataV5 := tradingPairs.share();
-    };
-  };
+  system func preupgrade() {};
 
   system func postupgrade() {
     Debug.print("Postupgrade");
-    ignore Timer.setTimer<system>(
-      #seconds(0),
-      func() : async () {
-        Debug.print("Init fired");
-        ignore await init();
-        if (is_running) {
-          runTimer<system>();
-        };
-      },
-    );
+    tradingPairs.replayTransactionHistoryLock := false;
+    updateTradingPairsMetrics();
+    if (is_running) {
+      runTimer<system>();
+    };
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
@@ -228,17 +199,12 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   public shared ({ caller }) func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
     #Err : ({
-      #NotInitializedError;
       #AlreadyStartedError;
     });
   } {
     await* assertAdminAccess(caller);
     assert not system_lock;
     Debug.print("Start bot");
-
-    if (is_initialized == false) {
-      return #Err(#NotInitializedError);
-    };
 
     if (is_running == true) {
       return #Err(#AlreadyStartedError);
@@ -262,17 +228,12 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
   public shared ({ caller }) func stopBot() : async {
     #Ok : (BotState);
     #Err : ({
-      #NotInitializedError;
       #AlreadyStopedError;
       #CancelOrdersError;
     });
   } {
     await* assertAdminAccess(caller);
     Debug.print("Stop bot");
-
-    if (is_initialized == false) {
-      return #Err(#NotInitializedError);
-    };
 
     if (is_running == false) {
       return #Err(#AlreadyStopedError);
@@ -317,7 +278,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
 
   public shared ({ caller }) func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
     await* assertAdminAccess(caller);
-    await* tradingPairs.setQuoteBalance(auction, baseSymbol, balance);
+    await* TradingPairsRegistry.setQuoteBalance(tradingPairs, auction, baseSymbol, balance);
   };
 
   public shared ({ caller }) func notify(token : ?Principal) : async () {
@@ -329,7 +290,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         ignore await* auction.notify(supported_tokens);
       };
     };
-    ignore await* tradingPairs.replayTransactionHistory(auction);
+    ignore await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
   };
 
   transient var executionLock : Bool = false;
@@ -349,7 +310,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
         tradingPairs.quoteInfo().symbol,
         pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
       );
-      let accountRevision = await* tradingPairs.replayTransactionHistory(auction);
+      let accountRevision = await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
 
       let pairsToProcess : List.List<MarketMaker.MarketPair> = List.empty();
       let ratesToProcess : List.List<Float> = List.empty();
@@ -442,18 +403,16 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          calls.add(
-            (
-              token,
-              src.icrc84_withdraw({
-                to = { owner = dest_auction; subaccount = ?destSubaccount };
-                amount = acc.available;
-                token;
-                expected_fee = null;
-              }),
-              tradingPairs.getPairByLedger(token),
-            ),
-          );
+          calls.add((
+            token,
+            src.icrc84_withdraw({
+              to = { owner = dest_auction; subaccount = ?destSubaccount };
+              amount = acc.available;
+              token;
+              expected_fee = null;
+            }),
+            tradingPairs.getPairByLedger(token),
+          ));
         };
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
