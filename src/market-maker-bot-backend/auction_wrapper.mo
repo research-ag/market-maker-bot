@@ -89,11 +89,7 @@ module {
           case (#Err err) switch (err) {
             case (#placement(e)) {
               let argIndex = func(token : Principal) : Nat = U.require(
-                Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>(
-                  orders,
-                  func(a, b) = a.0 == b.0,
-                  (token, [], []),
-                )
+                orders.indexOf(func(a, b) = a.0 == b.0, (token, [], []))
               );
               switch (placements.at(e.index)) {
                 case (#ask(token, _, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));

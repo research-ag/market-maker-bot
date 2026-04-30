@@ -323,7 +323,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
           switch (await call) {
             case (#Ok _) switch (pair) {
               case (?p) p.base_credits := 0;
-              case (null) if (Principal.equal(token, qt)) {
+              case (null) if (token.equal(qt)) {
                 for (p in tradingPairs.getPairs().vals()) {
                   p.quote_credits := 0;
                 };
@@ -361,7 +361,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          if (not Principal.equal(token, qt)) {
+          if (not token.equal(qt)) {
             calls.add((
               token,
               auction.icrc84_withdraw({
@@ -440,7 +440,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       };
       let rates = await* oracle.fetchRates(
         quote_token.symbol,
-        pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
+        pairs.map(func(x) = x.base.symbol),
       );
 
       let placements : List.List<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)> = List.empty();

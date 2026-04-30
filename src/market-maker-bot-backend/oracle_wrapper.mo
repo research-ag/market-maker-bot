@@ -32,13 +32,13 @@ module {
 
     let ratesCache : Map.Map<Text, { rate : Float; var ttl : Nat }> = Map.empty();
     private func cacheRate(symbol : Text, rate : Float) {
-      Map.add(ratesCache, Text.compare, symbol, { rate; var ttl = CACHE_TTL });
+      ratesCache.add(symbol, { rate; var ttl = CACHE_TTL });
     };
     private func popCachedRate(symbol : Text) : ?Float {
-      let ?entry = Map.get(ratesCache, Text.compare, symbol) else return null;
+      let ?entry = ratesCache.get(symbol) else return null;
       entry.ttl -= 1;
       if (entry.ttl == 0) {
-        Map.remove(ratesCache, Text.compare, symbol);
+        ratesCache.remove(symbol);
       };
       ?entry.rate;
     };
@@ -81,11 +81,11 @@ module {
       // fill call info and schedule all cross-canister calls at once
       for (i in baseSymbols.keys()) {
         switch (baseSymbols[i]) {
-          // case "TCYCLES" List.add(neutriniteSymbolPairs, (i, "TCYCLES", "XTC/USD"));
-          case "GLDT" List.add(metalPriceSymbolPairs, (i, "GLDT", "USDXAU"));
-          case "BTC" List.add(metalPriceSymbolPairs, (i, "BTC", "USDBTC"));
-          case "ETH" List.add(metalPriceSymbolPairs, (i, "ETH", "USDETH"));
-          case "EURC" List.add(metalPriceSymbolPairs, (i, "EURC", "USDEUR"));
+          // case "TCYCLES" neutriniteSymbolPairs.add((i, "TCYCLES", "XTC/USD"));
+          case "GLDT" metalPriceSymbolPairs.add((i, "GLDT", "USDXAU"));
+          case "BTC" metalPriceSymbolPairs.add((i, "BTC", "USDBTC"));
+          case "ETH" metalPriceSymbolPairs.add((i, "ETH", "USDETH"));
+          case "EURC" metalPriceSymbolPairs.add((i, "EURC", "USDEUR"));
           case symbol {
             let (baseSymbol, baseClass) = switch (symbol) {
               case "TCYCLES" ("XDR", #FiatCurrency);
@@ -103,7 +103,7 @@ module {
               };
             };
             try {
-              List.add(xrcCalls, (i, (with cycles = 10_000_000_000) xrc.get_exchange_rate(request)));
+              xrcCalls.add((i, (with cycles = 10_000_000_000) xrc.get_exchange_rate(request)));
             } catch (err) {
               res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
             };
@@ -123,7 +123,7 @@ module {
         try {
           metalPriceCall := ?(
             metalPriceApiOracle.queryRates(
-              metalPriceSymbolPairs.toArray() |> Array.map<(Nat, Text, remoteSymbol : Text), Text>(_, func((_, _, s)) = s)
+              metalPriceSymbolPairs.toArray().map<(Nat, Text, remoteSymbol : Text), Text>(func((_, _, s)) = s)
             )
           );
         } catch (err) {
@@ -190,7 +190,7 @@ module {
               };
             };
           } catch (err) {
-            for ((i, _, _) in List.values(neutriniteSymbolPairs)) {
+            for ((i, _, _) in neutriniteSymbolPairs.values()) {
               res[i] := #Err(#ErrorGetRates("Call error: " # Error.message(err)));
             };
           };

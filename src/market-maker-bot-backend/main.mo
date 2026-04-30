@@ -308,7 +308,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       let pairs = tradingPairs.getPairs();
       let rates = await* oracle.fetchRates(
         tradingPairs.quoteInfo().symbol,
-        pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
+        pairs.map<MarketMaker.MarketPair, Text>(func(x) = x.base.symbol),
       );
       let accountRevision = await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
 
@@ -422,7 +422,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
           switch (await call) {
             case (#Ok _) switch (pair) {
               case (?p) p.base_credits := 0;
-              case (null) if (Principal.equal(token, qt)) {
+              case (null) if (token.equal(qt)) {
                 for (p in tradingPairs.getPairs().vals()) {
                   p.quote_credits := 0;
                 };

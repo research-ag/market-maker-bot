@@ -76,7 +76,7 @@ module TradingPairsRegistry {
     };
 
     for (token in supported_tokens.vals()) {
-      if (not Principal.equal(token, quote_token)) {
+      if (not token.equal(quote_token)) {
         switch (tokens_info.get(Principal.compare, token)) {
           case (?_) {
             let base_token_info = U.getByKeyOrTrap<Principal, Tokens.TokenInfo>(tokens_info, token, Principal.compare, "Error get base token info");
@@ -126,7 +126,7 @@ module TradingPairsRegistry {
 
     try {
       let pairs : [(Text, MarketMaker.MarketPair)] = self.registry.toArray();
-      let basePrincipals = Array.map<(Text, MarketMaker.MarketPair), Principal>(pairs, func(_, x) = x.base.principal);
+      let basePrincipals = pairs.map<(Text, MarketMaker.MarketPair), Principal>(func(_, x) = x.base.principal);
       let quoteBalances = VarArray.tabulate<Int>(pairs.size(), func(i) = pairs[i].1.quote_credits);
       let baseBalances = VarArray.tabulate<Int>(pairs.size(), func(i) = pairs[i].1.base_credits);
 
@@ -165,7 +165,7 @@ module TradingPairsRegistry {
           };
         };
         for ((_, _, kind, token, volume, price) in historyChunk.vals()) {
-          switch (Array.indexOf<Principal>(basePrincipals, Principal.equal, token)) {
+          switch (basePrincipals.indexOf(Principal.equal, token)) {
             case (null) {};
             case (?tokenIdx) {
               switch (kind) {
@@ -185,8 +185,8 @@ module TradingPairsRegistry {
         if (historyChunk.size() < chunkSize and not auctionInProgress) break l;
       };
       Debug.print("Transactions history replayed (" # debug_show (processedTransactions - self.synchronizedTransactions : Nat) # " items). Applying credits..");
-      for (pair in Map.values(self.registry)) {
-        switch (Array.indexOf<Principal>(basePrincipals, Principal.equal, pair.base.principal)) {
+      for (pair in self.registry.values()) {
+        switch (basePrincipals.indexOf(Principal.equal, pair.base.principal)) {
           case (null) {};
           case (?tokenIdx) {
             pair.base_credits := Int.max(baseBalances[tokenIdx], 0) |> Int.abs(_);
@@ -204,10 +204,10 @@ module TradingPairsRegistry {
       // calculate quote credits reserve, update values in the registry
       let creditsMap : Map.Map<Principal, Nat> = Map.empty();
       for (credit in credits.vals()) {
-        Map.add(creditsMap, Principal.compare, credit.0, credit.1.total);
+        creditsMap.add(Principal.compare, credit.0, credit.1.total);
       };
       var quoteFreeCredits = U.getByKeyOrDefault<Principal, Nat>(creditsMap, quoteInfo(self).principal, Principal.compare, 0);
-      for (pair in Map.values(self.registry)) {
+      for (pair in self.registry.values()) {
         pair.base_credits := U.getByKeyOrDefault<Principal, Nat>(creditsMap, pair.base.principal, Principal.compare, 0);
         if (pair.quote_credits > 0) {
           if (quoteFreeCredits <= pair.quote_credits) {

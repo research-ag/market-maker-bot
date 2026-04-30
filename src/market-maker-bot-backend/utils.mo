@@ -45,12 +45,12 @@ module {
   };
 
   public func getByKeyOrDefault<T, K>(list : Map.Map<T, K>, key : T, compare : (T, T) -> Order.Order, default : K) : (K) {
-    let ?_value = Map.get<T, K>(list, compare, key) else return default;
+    let ?_value = list.get(key) else return default;
     _value;
   };
 
   public func getByKeyOrTrap<T, K>(list : Map.Map<T, K>, key : T, compare : (T, T) -> Order.Order, message : Text) : (K) {
-    let ?_value = Map.get<T, K>(list, compare, key) else Prim.trap(message);
+    let ?_value = list.get(key) else Prim.trap(message);
     _value;
   };
 
