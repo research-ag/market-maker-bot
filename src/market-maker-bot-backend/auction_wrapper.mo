@@ -10,12 +10,13 @@ import Error "mo:core/Error";
 import Float "mo:core/Float";
 import Int "mo:core/Int";
 import List "mo:core/List";
-import Prim "mo:prim";
 import Principal "mo:core/Principal";
 import VarArray "mo:core/VarArray";
 
-import Auction "./auction_definitions";
-import U "./utils";
+import Prim "mo:prim";
+
+import Auction "auction_definitions";
+import U "utils";
 
 module {
   public type OrderInfo = {
@@ -24,7 +25,7 @@ module {
   };
 
   public class Self(auction_principal : Principal) {
-    let ac : Auction.Self = actor (Principal.toText(auction_principal));
+    let ac : Auction.Self = actor (auction_principal.toText());
 
     public func getAuction() : (Auction.Self) = ac;
 
@@ -72,17 +73,17 @@ module {
       for ((token, bids, asks) in orders.vals()) {
         for (ask in asks.vals()) {
           if (ask.amount > 0) {
-            List.add(placements, #ask(token, orderBookType, ask.amount, ask.price));
+             placements.add(#ask(token, orderBookType, ask.amount, ask.price));
           };
         };
         for (bid in bids.vals()) {
           if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
-            List.add(placements, #bid(token, orderBookType, bid.amount, bid.price));
+            placements.add(#bid(token, orderBookType, bid.amount, bid.price));
           };
         };
       };
       try {
-        let res = await ac.manageOrders(?(#all(null)), List.toArray(placements), accountRevision);
+        let res = await ac.manageOrders(?(#all(null)), placements.toArray(), accountRevision);
         switch (res) {
           case (#Ok x) #Ok(x);
           case (#Err err) switch (err) {
@@ -94,7 +95,7 @@ module {
                   (token, [], []),
                 )
               );
-              switch (List.at(placements, e.index)) {
+              switch (placements.at(e.index)) {
                 case (#ask(token, _, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
                 case (#bid(token, _, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
               };
@@ -150,7 +151,7 @@ module {
           };
         };
       };
-      Array.fromVarArray(res);
+      res.toArray();
     };
   };
 };

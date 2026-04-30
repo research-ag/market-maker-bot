@@ -9,11 +9,11 @@ import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import VarArray "mo:core/VarArray";
 
-import Auction "./auction_definitions";
-import AuctionWrapper "./auction_wrapper";
-import MarketMaker "./market_maker";
-import Tokens "./tokens";
-import U "./utils";
+import Auction "auction_definitions";
+import AuctionWrapper "auction_wrapper";
+import MarketMaker "market_maker";
+import Tokens "tokens";
+import U "utils";
 
 module TradingPairsRegistry {
 

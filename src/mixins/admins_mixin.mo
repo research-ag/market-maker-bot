@@ -18,13 +18,13 @@ mixin(defaultAdmin : ?Principal) {
 
   private func assertAdminAccess(principal : Principal) : async* () {
     if (not Set.contains(admins, Principal.compare, principal)) {
-      throw Error.reject("No Access for this principal " # Principal.toText(principal));
+      throw Error.reject("No Access for this principal " # principal.toText());
     };
   };
 
   private func assertAdminAccessSync(principal : Principal) : () {
     if (not Set.contains(admins, Principal.compare, principal)) {
-      Prim.trap("No Access for this principal " # Principal.toText(principal));
+      Prim.trap("No Access for this principal " # principal.toText());
     };
   };
 

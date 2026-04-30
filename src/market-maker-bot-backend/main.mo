@@ -7,7 +7,6 @@
 /// Contributors: Timo Hanke
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
-import Bool "mo:core/Bool";
 import Debug "mo:core/Debug";
 import Error "mo:core/Error";
 import Float "mo:core/Float";
@@ -17,7 +16,6 @@ import List "mo:core/List";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
 import Principal "mo:core/Principal";
-import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
 import PT "mo:promtracker";
@@ -25,14 +23,14 @@ import PtHttp "mo:promtracker/mixins/http";
 
 import AdminsMixin "../mixins/admins_mixin";
 
-import Auction "./auction_definitions";
-import AuctionWrapper "./auction_wrapper";
-import CircularBuffer "./CircularBuffer";
-import HistoryModule "./history";
-import MarketMaker "./market_maker";
-import OracleWrapper "./oracle_wrapper";
-import TPR "./trading_pairs_registry";
-import U "./utils";
+import Auction "auction_definitions";
+import AuctionWrapper "auction_wrapper";
+import CircularBuffer "CircularBuffer";
+import HistoryModule "history";
+import MarketMaker "market_maker";
+import OracleWrapper "oracle_wrapper";
+import TPR "trading_pairs_registry";
+import U "utils";
 
 persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
 
@@ -97,7 +95,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
             PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[j].0.0 * 10000))),
             PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[j].0.1) * 10000))),
             PT.newValue("spread_weight_bips", [], func() = Int.abs(Float.toInt(pair.strategy[j].1 * 10000))),
-          ].bundle([("index", Nat.toText(j))]),
+          ].bundle([("index", j.toText())]),
         ).bundle([("base", pair.base.symbol)]),
       ).bundle([])
     );
@@ -128,7 +126,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
 
     try {
       is_initializing := true;
-      Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
+      Debug.print("Init bot: " # auction_principal.toText() # " " # oracle_principal.toText());
       tradingPairs.unshare(tradingPairsDataV5);
       let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
@@ -364,16 +362,16 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
               case (#Err(#ErrorGetRates(x))) addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, U.getErrorMessage(#RatesError(x)));
             };
           } else if (market_pair.base_credits == 0) {
-            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
+            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # market_pair.base.principal.toText());
           } else if (market_pair.quote_credits == 0) {
-            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
+            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # tradingPairs.quoteInfo().principal.toText());
           };
         } else {
-          List.add(pairsToProcess, market_pair);
-          List.add(ratesToProcess, U.requireUpperOk(rates[i]));
+          pairsToProcess.add(market_pair);
+          ratesToProcess.add(U.requireUpperOk(rates[i]));
         };
       };
-      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), List.toArray(pairsToProcess), List.toArray(ratesToProcess), auction, accountRevision);
+      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), pairsToProcess.toArray(), ratesToProcess.toArray(), auction, accountRevision);
 
       switch (execute_result) {
         case (#Ok results) {
@@ -381,7 +379,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
             let (bids, asks, rate) = results[i];
             for (j in Nat.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
               addHistoryItem(
-                ?MarketMaker.sharePair(List.at(pairsToProcess, i)),
+                ?MarketMaker.sharePair(pairsToProcess.at(i)),
                 if (j < bids.size()) { ?bids[j] } else { null },
                 if (j < asks.size()) { ?asks[j] } else { null },
                 ?rate,
@@ -414,10 +412,10 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
     assert not system_lock;
     system_lock := true;
     let qt = U.require(quote_token);
-    let src : Auction.Self = actor (Principal.toText(source_auction));
+    let src : Auction.Self = actor (source_auction.toText());
 
     func toSubaccount(p : Principal) : Blob {
-      let bytes = Blob.toArray(Principal.toBlob(p));
+      let bytes = p.toBlob().toArray();
       let size = bytes.size();
       assert size <= 29;
       Array.tabulate<Nat8>(
@@ -444,8 +442,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          List.add(
-            calls,
+          calls.add(
             (
               token,
               src.icrc84_withdraw({
@@ -461,7 +458,7 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in List.values(calls)) {
+      for ((token, call, pair) in calls.values()) {
         try {
           switch (await call) {
             case (#Ok _) switch (pair) {
@@ -473,10 +470,10 @@ persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Prin
                 tradingPairs.quoteReserve := 0;
               };
             };
-            case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+            case (#Err err) Debug.print("migrate_auction_credits error for token " # token.toText() # ": " # debug_show err);
           };
         } catch (err) {
-          Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+          Debug.print("migrate_auction_credits error for token " # token.toText() # ": " # Error.message(err));
         };
       };
     } catch (err) {

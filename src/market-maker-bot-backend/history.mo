@@ -4,12 +4,13 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Time "mo:core/Time";
-import Text "mo:core/Text";
-import Nat "mo:core/Nat";
 import Float "mo:core/Float";
 import Int "mo:core/Int";
-import MarketMakerModule "./market_maker";
+import Nat "mo:core/Nat";
+import Text "mo:core/Text";
+import Time "mo:core/Time";
+
+import MarketMakerModule "market_maker";
 
 module HistoryModule {
   public type HistoryItemTypeV4 = {
@@ -52,21 +53,21 @@ module HistoryModule {
   public func getText(item : HistoryItemTypeV4) : Text {
     Text.join(
       [
-        Int.toText(item.timestamp) # ":  ",
+        item.timestamp.toText() # ":  ",
         switch (item.pair) {
           case (?_pair) _pair.base.symbol # " ";
           case (null) "- ";
         },
         switch (item.rate) {
-          case (?_rate) "RATE " # Float.toText(_rate) # ", ";
+          case (?_rate) "RATE " # _rate.toText() # ", ";
           case (null) "";
         },
         switch (item.bidOrder) {
-          case (?_bidOrder) "BID " # Nat.toText(_bidOrder.amount) # " price " # Float.toText(_bidOrder.price) # ", ";
+          case (?_bidOrder) "BID " # _bidOrder.amount.toText() # " price " # _bidOrder.price.toText() # ", ";
           case (null) "";
         },
         switch (item.askOrder) {
-          case (?_askOrder) "ASK " # Nat.toText(_askOrder.amount) # " price " # Float.toText(_askOrder.price) # ", ";
+          case (?_askOrder) "ASK " # _askOrder.amount.toText() # " price " # _askOrder.price.toText() # ", ";
           case (null) "";
         },
         "RESULT " # item.message,

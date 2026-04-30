@@ -1,6 +1,5 @@
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
-import Bool "mo:core/Bool";
 import Debug "mo:core/Debug";
 import Error "mo:core/Error";
 import Float "mo:core/Float";
@@ -10,11 +9,10 @@ import Iter "mo:core/Iter";
 import List "mo:core/List";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
-import Prim "mo:prim";
 import Principal "mo:core/Principal";
-import Text "mo:core/Text";
 import Timer "mo:core/Timer";
 
+import Prim "mo:prim";
 import PT "mo:promtracker";
 import PtHttp "mo:promtracker/mixins/http";
 
@@ -23,12 +21,11 @@ import AdminsMixin "../mixins/admins_mixin";
 import Auction "../market-maker-bot-backend/auction_definitions";
 import AuctionWrapper "../market-maker-bot-backend/auction_wrapper";
 import CircularBuffer "../market-maker-bot-backend/CircularBuffer";
+import HistoryModule "history";
 import MarketMaker "../market-maker-bot-backend/market_maker";
 import OracleWrapper "../market-maker-bot-backend/oracle_wrapper";
 import TPR "../market-maker-bot-backend/trading_pairs_registry";
 import U "../market-maker-bot-backend/utils";
-
-import HistoryModule "./history";
 
 persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Principal, oracle_be_ : ?Principal) = self {
 
@@ -110,7 +107,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
     try {
       is_initializing := true;
-      Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
+      Debug.print("Init bot: " # auction_principal.toText() # " " # oracle_principal.toText());
       tradingPairs.unshare(tradingPairsDataV5);
       let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
       quote_token := ?qp;
@@ -279,7 +276,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
   };
 
   func toSubaccount(p : Principal) : Blob {
-    let bytes = Blob.toArray(Principal.toBlob(p));
+    let bytes = p.toBlob().toArray();
     let size = bytes.size();
     assert size <= 29;
     Array.tabulate<Nat8>(
@@ -311,7 +308,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     assert not system_lock;
     system_lock := true;
     let qt = U.require(quote_token);
-    let src : Auction.Self = actor (Principal.toText(source_auction));
+    let src : Auction.Self = actor (source_auction.toText());
     let destSubaccount = toSubaccount(Principal.fromActor(self));
 
     try {
@@ -323,8 +320,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          List.add(
-            calls,
+          calls.add(
             (
               token,
               src.icrc84_withdraw({
@@ -340,7 +336,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in List.values(calls)) {
+      for ((token, call, pair) in calls.values()) {
         try {
           switch (await call) {
             case (#Ok _) switch (pair) {
@@ -352,10 +348,10 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
                 tradingPairs.quoteReserve := 0;
               };
             };
-            case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+            case (#Err err) Debug.print("migrate_auction_credits error for token " # token.toText() # ": " # debug_show err);
           };
         } catch (err) {
-          Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+          Debug.print("migrate_auction_credits error for token " # token.toText() # ": " # Error.message(err));
         };
       };
     } catch (err) {
@@ -371,7 +367,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
     assert not is_running;
     assert not system_lock;
     system_lock := true;
-    let auction : Auction.Self = actor (Principal.toText(auction_principal));
+    let auction : Auction.Self = actor (auction_principal.toText());
     let destSubaccount = toSubaccount(receiver);
     let qt = U.require(quote_token);
 
@@ -384,8 +380,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       try {
         for ((token, acc) in credits.vals()) {
           if (not Principal.equal(token, qt)) {
-            List.add(
-              calls,
+            calls.add(
               (
                 token,
                 auction.icrc84_withdraw({
@@ -405,15 +400,15 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       } catch (err) {
         Debug.print("transfer_base_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in List.values(calls)) {
+      for ((token, call, pair) in calls.values()) {
         try {
           switch (await call, pair) {
             case (#Ok _, ?p) p.base_credits := 0;
-            case (#Err err, _) Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+            case (#Err err, _) Debug.print("transfer_base_credits error for token " # token.toText() # ": " # debug_show err);
             case (_) {};
           };
         } catch (err) {
-          Debug.print("transfer_base_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+          Debug.print("transfer_base_credits error for token " # token.toText() # ": " # Error.message(err));
         };
       };
     } catch (err) {
@@ -497,7 +492,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
         if (amount % volumeStep > 0) {
           amount += volumeStep - (amount % volumeStep);
         };
-        List.add<(MarketMaker.MarketPair, MarketMaker.OrderInfo, Float)>(placements, (pair, { amount; price }, U.requireUpperOk(rates[i])));
+        placements.add((pair, { amount; price }, U.requireUpperOk(rates[i])));
       };
 
       let orderBookType = if (activityBotMode == 0) {
@@ -508,8 +503,8 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
       let replace_orders_result = await* auction.replaceOrders(
         Array.tabulate<(Principal, [MarketMaker.OrderInfo], [MarketMaker.OrderInfo])>(
-          List.size(placements),
-          func(i) = List.at(placements, i) |> (_.0.base.principal, [_.1], []),
+          placements.size(),
+          func(i) = placements.at(i) |> (_.0.base.principal, [_.1], []),
         ),
         orderBookType,
         null,
@@ -517,7 +512,7 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
 
       switch (replace_orders_result) {
         case (#Ok _) {
-          for (p in List.values(placements)) {
+          for (p in placements.values()) {
             addHistoryItem(?MarketMaker.sharePair(p.0), ?p.1, ?p.2, "OK");
           };
         };

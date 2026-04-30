@@ -8,15 +8,14 @@
 
 import Array "mo:core/Array";
 import Float "mo:core/Float";
-import Principal "mo:core/Principal";
 import Int "mo:core/Int";
-import Nat32 "mo:core/Nat32";
 import Int32 "mo:core/Int32";
-
 import List "mo:core/List";
+import Nat32 "mo:core/Nat32";
+import Principal "mo:core/Principal";
 
-import AuctionWrapper "./auction_wrapper";
-import U "./utils";
+import AuctionWrapper "auction_wrapper";
+import U "utils";
 
 module MarketMaker {
   type PricesInfo = {
@@ -82,7 +81,7 @@ module MarketMaker {
 
   public func getPrices(spread : (value : Float, bias : Float), currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
     // normalize the price before create the order to the smallest units of the tokens
-    let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
+    let multiplicator : Float = Float.fromInt64(decimals_multiplicator.toInt64());
 
     {
       bid_price = limitPrecision(currency_rate * (1.0 + spread.1 - spread.0) * Float.pow(10, multiplicator));
@@ -132,13 +131,13 @@ module MarketMaker {
       // find already added order with same price and add the volume to it
       // duplicated orders with the same price result in #ConflictingOrder error
       func addOrderToList(list : List.List<OrderInfo>, amount : Nat, price : Float) {
-        for ((i, order) in List.enumerate(list)) {
+        for ((i, order) in list.enumerate()) {
           if (order.price == price) {
-            List.put(list, i, { amount = order.amount + amount; price });
+            list.put(i, { amount = order.amount + amount; price });
             return;
           };
         };
-        List.add(list, { amount; price });
+        list.add({ amount; price });
       };
 
       for (j in pair.strategy.keys()) {
@@ -154,16 +153,16 @@ module MarketMaker {
         addOrderToList(bids, bid_volume, bid_price);
         addOrderToList(asks, ask_volume, ask_price);
       };
-      List.add(replaceArgs, (pair.base.principal, List.toArray(bids), List.toArray(asks)));
+      replaceArgs.add((pair.base.principal, bids.toArray(), asks.toArray()));
     };
 
-    let replace_orders_result = await* ac.replaceOrders(List.toArray(replaceArgs), #immediate, ?accountRevision);
+    let replace_orders_result = await* ac.replaceOrders(replaceArgs.toArray(), #immediate, ?accountRevision);
 
     switch (replace_orders_result) {
       case (#Ok _) {
         Array.tabulate<([OrderInfo], [OrderInfo], Float)>(
           pairs.size(),
-          func(i) = (List.at(replaceArgs, i).1, List.at(replaceArgs, i).2, rates[i]),
+          func(i) = (replaceArgs.at(i).1, replaceArgs.at(i).2, rates[i]),
         ) |> #Ok(_);
       };
       case (#Err(err)) {

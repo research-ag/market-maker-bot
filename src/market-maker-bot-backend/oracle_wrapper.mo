@@ -8,18 +8,18 @@ import Array "mo:core/Array";
 import Debug "mo:core/Debug";
 import Error "mo:core/Error";
 import Float "mo:core/Float";
+import List "mo:core/List";
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Nat32 "mo:core/Nat32";
 import Nat64 "mo:core/Nat64";
-import Prim "mo:prim";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import VarArray "mo:core/VarArray";
 
-import List "mo:core/List";
+import Prim "mo:prim";
 
-import OracleDefinitions "./oracle_definitions";
+import OracleDefinitions "oracle_definitions";
 
 module {
 
@@ -43,7 +43,7 @@ module {
       ?entry.rate;
     };
 
-    let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
+    let xrc : OracleDefinitions.Self = actor (oracle_principal.toText());
 
     let neutriniteOracle : (
       actor {
@@ -58,8 +58,8 @@ module {
     ) = actor ("k2ic6-3yaaa-aaaao-a3u6a-cai");
 
     func calculateRate(rate : Nat64, decimals : Nat32) : Float {
-      let exponent : Float = Float.fromInt(Nat32.toNat(decimals));
-      Float.fromInt(Nat64.toNat(rate)) / Float.pow(10, exponent);
+      let exponent : Float = Float.fromInt(decimals.toNat());
+      rate.toNat().toFloat() / Float.pow(10, exponent);
     };
 
     public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* [{
@@ -110,31 +110,31 @@ module {
           };
         };
       };
-      if (List.size(neutriniteSymbolPairs) > 0) {
+      if (neutriniteSymbolPairs.size() > 0) {
         try {
           neutriniteCall := ?(neutriniteOracle.get_latest());
         } catch (err) {
-          for ((i, _, _) in List.values(neutriniteSymbolPairs)) {
+          for ((i, _, _) in neutriniteSymbolPairs.values()) {
             res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
           };
         };
       };
-      if (List.size(metalPriceSymbolPairs) > 0) {
+      if (metalPriceSymbolPairs.size() > 0) {
         try {
           metalPriceCall := ?(
             metalPriceApiOracle.queryRates(
-              List.toArray(metalPriceSymbolPairs) |> Array.map<(Nat, Text, remoteSymbol : Text), Text>(_, func((_, _, s)) = s)
+              metalPriceSymbolPairs.toArray() |> Array.map<(Nat, Text, remoteSymbol : Text), Text>(_, func((_, _, s)) = s)
             )
           );
         } catch (err) {
-          for ((i, _, _) in List.values(metalPriceSymbolPairs)) {
+          for ((i, _, _) in metalPriceSymbolPairs.values()) {
             res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
           };
         };
       };
 
       // actually await cross-canister calls
-      for ((i, call) in List.values(xrcCalls)) {
+      for ((i, call) in xrcCalls.values()) {
         try {
           let response = await call;
           res[i] := switch (response) {
@@ -174,7 +174,7 @@ module {
         case (?call) {
           try {
             let results = await call;
-            for ((i, _, remoteSymbol) in List.values(neutriniteSymbolPairs)) {
+            for ((i, _, remoteSymbol) in neutriniteSymbolPairs.values()) {
               var rate : Float = 0;
               label l for (x in results.vals()) {
                 if (x.1 == remoteSymbol) {
@@ -202,13 +202,13 @@ module {
           try {
             let results = await call;
             // ignore rates, synchronised more than 6 hours ago
-            let minSyncTimestamp = Nat64.toNat(Prim.time() / 1_000_000_000 - 6 * 60 * 60);
-            for ((idx, (i, localSymbol, remoteSymbol)) in List.enumerate(metalPriceSymbolPairs)) {
+            let minSyncTimestamp = (Prim.time() / 1_000_000_000 - 6 * 60 * 60).toNat();
+            for ((idx, (i, localSymbol, remoteSymbol)) in metalPriceSymbolPairs.enumerate()) {
               res[i] := switch (results[idx].1) {
                 case (null) #Err(#ErrorGetRates("Metal Price API did not provide key " # remoteSymbol));
                 case (?{ value; timestamp }) {
                   if (timestamp < minSyncTimestamp) {
-                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # Nat.toText(timestamp)));
+                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # timestamp.toText()));
                   } else {
                     let rate = if (localSymbol == "GLDT") {
                       value / 3110.35;
@@ -222,7 +222,7 @@ module {
               };
             };
           } catch (err) {
-            for ((i, _, _) in List.values(metalPriceSymbolPairs)) {
+            for ((i, _, _) in metalPriceSymbolPairs.values()) {
               res[i] := #Err(#ErrorGetRates("Call error: " # Error.message(err)));
             };
           };
@@ -245,7 +245,7 @@ module {
         };
       };
       Debug.print("Rates fetched: " # debug_show res);
-      Array.fromVarArray(res);
+      res.toArray();
     };
   };
 };

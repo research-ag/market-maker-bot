@@ -8,6 +8,7 @@ import Iter "mo:core/Iter";
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Order "mo:core/Order";
+
 import Prim "mo:prim";
 
 module {
@@ -37,8 +38,8 @@ module {
       case (#UnknownAssetError) "Unknown asset error";
       case (#NoCreditError) "No credit error";
       case (#TooLowOrderError) "Too low order error";
-      case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # Nat.toText(baseVolumeStep);
-      case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # Nat.toText(maxDigits);
+      case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # baseVolumeStep.toText();
+      case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # maxDigits.toText();
       case (#AccountRevisionMismatch) "Account revision mismatch";
     };
   };

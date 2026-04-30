@@ -25,3 +25,7 @@ dist/
 .env
 
 .mops
+
+# AI
+.agents/
+.junie/
