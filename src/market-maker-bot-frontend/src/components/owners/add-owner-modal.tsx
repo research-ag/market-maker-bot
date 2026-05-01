@@ -6,7 +6,7 @@ import {Box, Button, FormControl, FormLabel, Input, Modal, ModalClose, ModalDial
 
 import {useAddAdmin} from '../../integration';
 import {ErrorAlert} from '../error-alert';
-import {Principal} from '@dfinity/principal';
+import {Principal} from '@icp-sdk/core/principal';
 import {validatePrincipal} from '../../utils';
 
 interface AddFormValues {

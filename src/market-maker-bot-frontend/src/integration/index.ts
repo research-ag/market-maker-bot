@@ -4,8 +4,8 @@ import { useSnackbar } from 'notistack';
 import { useIdentity } from './identity';
 import { canisterId as cid, createActor } from '../declarations/market-maker-bot-backend';
 import { createActor as createActivityBotActor } from '../declarations/activity-bot-backend';
-import { Principal } from "@dfinity/principal";
-import { useMemo } from "react";
+import { Principal } from "@icp-sdk/core/principal";
+import { useMemo } from "react"
 
 export const canisterId = cid;
 export const activityBot0CanisterId = "2cvmy-aiaaa-aaaao-a3qmq-cai";
