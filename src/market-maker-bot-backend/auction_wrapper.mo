@@ -4,18 +4,19 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
+import Array "mo:core/Array";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+import List "mo:core/List";
+import Principal "mo:core/Principal";
+import VarArray "mo:core/VarArray";
+
 import Prim "mo:prim";
-import Principal "mo:base/Principal";
-import Array "mo:base/Array";
 
-import Vec "mo:vector";
-
-import Auction "./auction_definitions";
-import U "./utils";
+import Auction "auction_definitions";
+import U "utils";
 
 module {
   public type OrderInfo = {
@@ -24,7 +25,7 @@ module {
   };
 
   public class Self(auction_principal : Principal) {
-    let ac : Auction.Self = actor (Principal.toText(auction_principal));
+    let ac : Auction.Self = actor (auction_principal.toText());
 
     public func getAuction() : (Auction.Self) = ac;
 
@@ -61,41 +62,43 @@ module {
       };
     };
 
-    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], sessionNumber : ?Nat) : async* {
-      #Ok : ([Auction.CancellationResult], [Auction.OrderId]);
+    public func replaceOrders(orders : [(token : Principal, bids : [OrderInfo], asks : [OrderInfo])], orderBookType : Auction.OrderBookType, accountRevision : ?Nat) : async* {
+      #Ok : ([Auction.CancellationResult], [Auction.PlaceOrderResult]);
       #Err : {
         #cancellation : Auction.ManageOrdersCancellationError;
         #placement : (argIndex : Nat, failedAsk : ?OrderInfo, failedBid : ?OrderInfo, error : Auction.ManageOrdersPlacementError);
       } or Auction.ManageOrdersOtherError;
     } {
-      let placements : Vec.Vector<{ #ask : (Principal, Nat, Float); #bid : (Principal, Nat, Float) }> = Vec.new();
+      let placements : List.List<{ #ask : (Principal, Auction.OrderBookType, Nat, Float); #bid : (Principal, Auction.OrderBookType, Nat, Float) }> = List.empty();
       for ((token, bids, asks) in orders.vals()) {
         for (ask in asks.vals()) {
           if (ask.amount > 0) {
-            Vec.add(placements, #ask(token, ask.amount, ask.price));
+            placements.add(#ask(token, orderBookType, ask.amount, ask.price));
           };
         };
         for (bid in bids.vals()) {
           if (Int.abs(Float.toInt(Float.ceil(bid.price * Float.fromInt(bid.amount)))) >= 5_000) {
-            Vec.add(placements, #bid(token, bid.amount, bid.price));
+            placements.add(#bid(token, orderBookType, bid.amount, bid.price));
           };
         };
       };
       try {
-        let res = await ac.manageOrders(?(#all(null)), Vec.toArray(placements), sessionNumber);
+        let res = await ac.manageOrders(?(#all(null)), placements.toArray(), accountRevision);
         switch (res) {
           case (#Ok x) #Ok(x);
           case (#Err err) switch (err) {
             case (#placement(e)) {
-              let argIndex = func(token : Principal) : Nat = U.require(Array.indexOf<(Principal, [OrderInfo], [OrderInfo])>((token, [], []), orders, func(a, b) = a.0 == b.0));
-              switch (Vec.get(placements, e.index)) {
-                case (#ask(token, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
-                case (#bid(token, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
+              let argIndex = func(token : Principal) : Nat = U.require(
+                orders.indexOf(func(a, b) = a.0 == b.0, (token, [], []))
+              );
+              switch (placements.at(e.index)) {
+                case (#ask(token, _, amount, price)) #Err(#placement(argIndex(token), ?{ amount; price }, null, e));
+                case (#bid(token, _, amount, price)) #Err(#placement(argIndex(token), null, ?{ amount; price }, e));
               };
             };
             case (#cancellation(e)) #Err(#cancellation(e));
-            case (#SessionNumberMismatch(x)) #Err(#SessionNumberMismatch(x));
-            case (#UnknownPrincipal(x)) #Err(#UnknownPrincipal(x));
+            case (#AccountRevisionMismatch) #Err(#AccountRevisionMismatch);
+            case (#UnknownPrincipal) #Err(#UnknownPrincipal);
             case (#UnknownError(x)) #Err(#UnknownError(x));
           };
         };
@@ -122,11 +125,11 @@ module {
     };
 
     public func notify(tokens : [Principal]) : async* [{ #Ok; #Err }] {
-      let calls : [var ?(async Auction.NotifyResult)] = Array.init(tokens.size(), null);
+      let calls : [var ?(async Auction.NotifyResponse)] = VarArray.repeat(null, tokens.size());
       for (i in tokens.keys()) {
         calls[i] := ?ac.icrc84_notify({ token = tokens[i] });
       };
-      let res : [var { #Ok; #Err }] = Array.init(tokens.size(), #Err);
+      let res : [var { #Ok; #Err }] = VarArray.repeat(#Err, tokens.size());
       for (i in calls.keys()) {
         res[i] := switch (calls[i]) {
           case (null) #Err;
@@ -144,7 +147,7 @@ module {
           };
         };
       };
-      Array.freeze(res);
+      res.toArray();
     };
   };
 };

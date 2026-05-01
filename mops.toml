@@ -1,7 +1,6 @@
 [dependencies]
-base = "0.14.2"
-vector = "0.4.1"
-promtracker = "0.5.4"
+core = "2.5.0"
+promtracker = "https://github.com/research-ag/promtracker#static-2@c12fa8738a5b3eb783f6ba3f9f2b67fb4ec7d138"
 
 [toolchain]
-moc = "0.14.2"
+moc = "1.6.0"

@@ -6,17 +6,16 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Array "mo:base/Array";
-import Float "mo:base/Float";
-import Principal "mo:base/Principal";
-import Int "mo:base/Int";
-import Nat32 "mo:base/Nat32";
-import Int32 "mo:base/Int32";
+import Array "mo:core/Array";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+import Int32 "mo:core/Int32";
+import List "mo:core/List";
+import Nat32 "mo:core/Nat32";
+import Principal "mo:core/Principal";
 
-import Vec "mo:vector";
-
-import AuctionWrapper "./auction_wrapper";
-import U "./utils";
+import AuctionWrapper "auction_wrapper";
+import U "utils";
 
 module MarketMaker {
   type PricesInfo = {
@@ -82,7 +81,7 @@ module MarketMaker {
 
   public func getPrices(spread : (value : Float, bias : Float), currency_rate : Float, decimals_multiplicator : Int32) : PricesInfo {
     // normalize the price before create the order to the smallest units of the tokens
-    let multiplicator : Float = Float.fromInt64(Int32.toInt64(decimals_multiplicator));
+    let multiplicator : Float = Float.fromInt64(decimals_multiplicator.toInt64());
 
     {
       bid_price = limitPrecision(currency_rate * (1.0 + spread.1 - spread.0) * Float.pow(10, multiplicator));
@@ -112,12 +111,12 @@ module MarketMaker {
     pairs : [MarketPair],
     rates : [Float],
     ac : AuctionWrapper.Self,
-    sessionNumber : Nat,
+    accountRevision : Nat,
   ) : async* {
     #Ok : [(bids : [OrderInfo], asks : [OrderInfo], Float)];
     #Err : (U.ExecutionError, ?MarketPairShared, ?OrderInfo, ?OrderInfo, ?Float);
   } {
-    let replaceArgs : Vec.Vector<(token : Principal, bids : [OrderInfo], asks : [OrderInfo])> = Vec.new();
+    let replaceArgs : List.List<(token : Principal, bids : [OrderInfo], asks : [OrderInfo])> = List.empty();
 
     for (i in pairs.keys()) {
       let pair = pairs[i];
@@ -127,18 +126,18 @@ module MarketMaker {
 
       func creditPart(credit : Nat, weight : Float) : Nat = (Float.fromInt(credit) * weight) |> Int.abs(Float.toInt(_));
 
-      let bids = Vec.new<OrderInfo>();
-      let asks = Vec.new<OrderInfo>();
+      let bids = List.empty<OrderInfo>();
+      let asks = List.empty<OrderInfo>();
       // find already added order with same price and add the volume to it
       // duplicated orders with the same price result in #ConflictingOrder error
-      func addOrderToList(list : Vec.Vector<OrderInfo>, amount : Nat, price : Float) {
-        for ((order, i) in Vec.items(list)) {
+      func addOrderToList(list : List.List<OrderInfo>, amount : Nat, price : Float) {
+        for ((i, order) in list.enumerate()) {
           if (order.price == price) {
-            Vec.put(list, i, { amount = order.amount + amount; price });
+            list.put(i, { amount = order.amount + amount; price });
             return;
           };
         };
-        Vec.add(list, { amount; price });
+        list.add({ amount; price });
       };
 
       for (j in pair.strategy.keys()) {
@@ -154,16 +153,16 @@ module MarketMaker {
         addOrderToList(bids, bid_volume, bid_price);
         addOrderToList(asks, ask_volume, ask_price);
       };
-      Vec.add(replaceArgs, (pair.base.principal, Vec.toArray(bids), Vec.toArray(asks)));
+      replaceArgs.add((pair.base.principal, bids.toArray(), asks.toArray()));
     };
 
-    let replace_orders_result = await* ac.replaceOrders(Vec.toArray(replaceArgs), ?sessionNumber);
+    let replace_orders_result = await* ac.replaceOrders(replaceArgs.toArray(), #immediate, ?accountRevision);
 
     switch (replace_orders_result) {
       case (#Ok _) {
         Array.tabulate<([OrderInfo], [OrderInfo], Float)>(
           pairs.size(),
-          func(i) = (Vec.get(replaceArgs, i).1, Vec.get(replaceArgs, i).2, rates[i]),
+          func(i) = (replaceArgs.at(i).1, replaceArgs.at(i).2, rates[i]),
         ) |> #Ok(_);
       };
       case (#Err(err)) {
@@ -181,7 +180,7 @@ module MarketMaker {
             };
           };
           case (#cancellation(err)) #Err(#CancellationError, null, null, null, null);
-          case (#SessionNumberMismatch x) #Err(#SessionNumberMismatch(x), null, null, null, null);
+          case (#AccountRevisionMismatch) #Err(#AccountRevisionMismatch, null, null, null, null);
           case (#UnknownPrincipal) #Err(#UnknownPrincipal, null, null, null, null);
           case (#UnknownError x) #Err(#UnknownError(x), null, null, null, null);
         };

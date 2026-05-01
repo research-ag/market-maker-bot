@@ -4,7 +4,7 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Float "mo:base/Float";
+import Float "mo:core/Float";
 
 module PriceMakerModule {
   let market_volatility : Nat = 0; // Temporary set ot 0 to avoid influence at price, will calulate in next version

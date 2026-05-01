@@ -4,9 +4,8 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import AssocList "mo:base/AssocList";
-import List "mo:base/List";
-import Principal "mo:base/Principal";
+import Map "mo:core/Map";
+import Principal "mo:core/Principal";
 
 module {
   public type TokenInfo = {
@@ -14,7 +13,7 @@ module {
     decimals : Nat32;
   };
 
-  public func getTokensInfo() : AssocList.AssocList<Principal, TokenInfo> {
+  public func getTokensInfo() : Map.Map<Principal, TokenInfo> {
     /// initialize tokens info map
     let symbolsArray : [(Principal, TokenInfo)] = [
       (Principal.fromText("cngnf-vqaaa-aaaar-qag4q-cai"), { symbol = "USDT"; decimals = 6 }),
@@ -27,7 +26,6 @@ module {
       (Principal.fromText("lkwrt-vyaaa-aaaaq-aadhq-cai"), { symbol = "OGY"; decimals = 8 }),
       (Principal.fromText("pe5t5-diaaa-aaaar-qahwa-cai"), { symbol = "EURC"; decimals = 6 }),
     ];
-
-    List.fromArray(symbolsArray);
+    Map.fromArray(symbolsArray, Principal.compare);
   };
 };

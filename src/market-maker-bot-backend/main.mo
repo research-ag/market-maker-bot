@@ -5,123 +5,101 @@
 /// Copyright: 2023-2024 MR Research AG
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
-import Array "mo:base/Array";
-import Blob "mo:base/Blob";
-import Bool "mo:base/Bool";
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import Int "mo:base/Int";
-import Iter "mo:base/Iter";
-import Nat "mo:base/Nat";
-import Nat8 "mo:base/Nat8";
-import Principal "mo:base/Principal";
-import RBTree "mo:base/RBTree";
-import Text "mo:base/Text";
-import Timer "mo:base/Timer";
+import Array "mo:core/Array";
+import Blob "mo:core/Blob";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import Int "mo:core/Int";
+import Iter "mo:core/Iter";
+import List "mo:core/List";
+import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
+import Option "mo:core/Option";
+import Principal "mo:core/Principal";
+import Timer "mo:core/Timer";
 
 import PT "mo:promtracker";
-import Vec "mo:vector";
+import PtHttp "mo:promtracker/mixins/http";
 
-import Auction "./auction_definitions";
-import AuctionWrapper "./auction_wrapper";
-import HistoryModule "./history";
-import HTTP "./http";
-import MarketMaker "./market_maker";
-import OracleWrapper "./oracle_wrapper";
-import TPR "./trading_pairs_registry";
-import U "./utils";
+import AdminsMixin "../mixins/admins_mixin";
 
-actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
+import Auction "auction_definitions";
+import AuctionWrapper "auction_wrapper";
+import CircularBuffer "CircularBuffer";
+import HistoryModule "history";
+import MarketMaker "market_maker";
+import OracleWrapper "oracle_wrapper";
+import TradingPairsRegistry "trading_pairs_registry";
+import U "utils";
 
-  stable let auction_principal : Principal = auction_be_;
-  stable let oracle_principal : Principal = oracle_be_;
+persistent actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = self {
 
-  stable var tradingPairsDataV3 : TPR.StableDataV3 = TPR.defaultStableDataV3();
-  stable var tradingPairsDataV4 : TPR.StableDataV4 = TPR.migrateStableDataV4(tradingPairsDataV3);
+  include AdminsMixin(null);
 
-  stable let historyV3 : Vec.Vector<HistoryModule.HistoryItemTypeV3> = Vec.new();
-  stable let historyV4 : Vec.Vector<HistoryModule.HistoryItemTypeV4> = Vec.map<HistoryModule.HistoryItemTypeV3, HistoryModule.HistoryItemTypeV4>(
-    historyV3,
-    func(x) : HistoryModule.HistoryItemTypeV4 = {
-      x with
-      pair = switch (x.pair) {
-        case (?p) (?{ p with strategy = [(p.spread, 1.0)] });
-        case (null) null;
-      };
-    },
-  );
+  let auction_principal : Principal = auction_be_;
+  let oracle_principal : Principal = oracle_be_;
 
-  let tradingPairs : TPR.TradingPairsRegistry = TPR.TradingPairsRegistry();
-  let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
-  let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
-  let default_strategy : MarketMaker.MarketPairStrategy = [((0.05, 0.0), 1.0)];
-
-  var bot_timer : Timer.TimerId = 0;
-
-  /// Bot state flags and variables
-  stable var bot_timer_interval : Nat = 6 * 60;
-  stable var is_running : Bool = false;
-  var is_initialized : Bool = false;
-  var is_initializing : Bool = false;
+  var bot_timer_interval : Nat = 6 * 60;
+  var is_running : Bool = false;
   var quote_token : ?Principal = null;
   var supported_tokens : [Principal] = [];
-  /// End Bot state flags and variables
+  let tradingPairs : TradingPairsRegistry.TradingPairsRegistry = TradingPairsRegistry.new();
+  let history : CircularBuffer.CircularBuffer<HistoryModule.HistoryItemTypeV4> = CircularBuffer.new(65536);
 
-  stable var stableAdminsMap = RBTree.RBTree<Principal, ()>(Principal.compare).share();
-  switch (RBTree.size(stableAdminsMap)) {
-    case (0) {
-      let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
-      adminsMap.put(Principal.fromText("2vxsx-fae"), ());
-      stableAdminsMap := adminsMap.share();
-    };
-    case (_) {};
-  };
-  let adminsMap = RBTree.RBTree<Principal, ()>(Principal.compare);
-  adminsMap.unshare(stableAdminsMap);
+  transient let auction : AuctionWrapper.Self = AuctionWrapper.Self(auction_principal);
+  transient let oracle : OracleWrapper.Self = OracleWrapper.Self(oracle_principal);
+  transient let default_strategy : MarketMaker.MarketPairStrategy = [((0.02, 0.0), 1.0)];
 
+  transient var bot_timer : Timer.TimerId = 0;
+
+  transient var is_initializing : Bool = false;
   // a lock that prevents bot to run when set
-  var system_lock : Bool = false;
+  transient var system_lock : Bool = false;
 
-  let metrics = PT.PromTracker("", 65);
-  metrics.addSystemValues();
-  ignore metrics.addPullValue("bot_timer_interval", "", func() = bot_timer_interval);
-  ignore metrics.addPullValue("running", "", func() = if (is_running) { 1 } else { 0 });
-  ignore metrics.addPullValue("quote_reserve", "", tradingPairs.getQuoteReserve);
+  transient let renderer = PT.Renderer();
+  renderer.addCanisterLabel(self);
+  include PtHttp(renderer.renderExposition, "/metrics");
 
-  var tradingPairStrategyMetrics : Vec.Vector<[(PT.PullValue, PT.PullValue, PT.PullValue)]> = Vec.new();
+  renderer.addValue(PT.allSystemMetrics);
+  renderer.addValue(
+    [
+      PT.newValue("bot_timer_interval", [], func() = bot_timer_interval),
+      PT.newValue("running", [], func() = if (is_running) { 1 } else { 0 }),
+      PT.newValue("quote_reserve", [], func() = tradingPairs.getQuoteReserve()),
+      PT.newValue("history_length", [], func() = history.size()),
+    ].bundle([])
+  );
+
+  transient var tradingPairStrategyMetrics : ?Nat = null;
   func updateTradingPairsMetrics() {
     // remove existing metrics
-    for (v in Vec.vals(tradingPairStrategyMetrics)) {
-      for (x in v.vals()) {
-        x.0.remove();
-        x.1.remove();
-        x.2.remove();
-      };
+    switch (tradingPairStrategyMetrics) {
+      case (?m) renderer.removeValue(m);
+      case (null) {};
     };
-    tradingPairStrategyMetrics := Vec.new();
     // register metrics
-    let pairs = tradingPairs.getPairs();
-    for (i in pairs.keys()) {
-      let pair = func() : MarketMaker.MarketPair = tradingPairs.getPairs()[i];
-      let lbl = func(index : Nat) : Text = "base=\"" # pair().base.symbol # "\",index=\"" # Nat.toText(index) # "\"";
-      let mtr = Array.tabulate<(PT.PullValue, PT.PullValue, PT.PullValue)>(
-        pairs[i].strategy.size(),
-        func(j) = (
-          metrics.addPullValue("spread_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(0.5 + _.strategy[j].0.0 * 10000))),
-          metrics.addPullValue("spread_base_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(0.5 + (1.0 + _.strategy[j].0.1) * 10000))),
-          metrics.addPullValue("spread_weight_bips", lbl(j), func() = pair() |> Int.abs(Float.toInt(_.strategy[j].1 * 10000))),
-        ),
-      );
-      Vec.add(tradingPairStrategyMetrics, mtr);
-    };
+    tradingPairStrategyMetrics := ?renderer.addValueRef(
+      tradingPairs.getPairs().map(
+        func(pair) = Array.tabulate(
+          pair.strategy.size(),
+          func(j) = [
+            PT.newValue("base_credits", [], func() = pair.base_credits),
+            PT.newValue("quote_credits", [], func() = pair.quote_credits),
+            PT.newValue("spread_bips", [], func() = Int.abs(Float.toInt(0.5 + pair.strategy[j].0.0 * 10000))),
+            PT.newValue("spread_base_bips", [], func() = Int.abs(Float.toInt(0.5 + (1.0 + pair.strategy[j].0.1) * 10000))),
+            PT.newValue("spread_weight_bips", [], func() = Int.abs(Float.toInt(pair.strategy[j].1 * 10000))),
+          ].bundle([("index", j.toText())]),
+        ).bundle([("base", pair.base.symbol)])
+      ).bundle([])
+    );
   };
 
   func getState() : (BotState) {
     {
       timer_interval = bot_timer_interval;
       running = is_running;
-      initialized = is_initialized;
+      initialized = Option.isSome(quote_token);
       initializing = is_initializing;
       quote_token = quote_token;
       supported_tokens = supported_tokens;
@@ -133,33 +111,23 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     #Err : ({
       #UnknownQuoteTokenError;
       #InitializingInProgressError;
-      #AlreadyInitializedError;
       #UnknownError;
     });
   } {
     if (is_initializing) return #Err(#InitializingInProgressError);
-    if (is_initialized) return #Err(#AlreadyInitializedError);
 
     try {
       is_initializing := true;
-      Debug.print("Init bot: " # Principal.toText(auction_principal) # " " # Principal.toText(oracle_principal));
-      tradingPairs.unshare(tradingPairsDataV4);
-      let (qp, sp) = await* tradingPairs.initTokens(auction, default_strategy);
+      Debug.print("Init bot: " # auction_principal.toText() # " " # oracle_principal.toText());
+      let (qp, sp) = await* TradingPairsRegistry.initTokens(tradingPairs, auction, default_strategy);
       quote_token := ?qp;
       supported_tokens := sp;
-      for (pair in tradingPairs.getPairs().vals()) {
-        let labels = "base=\"" # pair.base.symbol # "\"";
-
-        ignore metrics.addPullValue("base_credits", labels, func() = pair.base_credits);
-        ignore metrics.addPullValue("quote_credits", labels, func() = pair.quote_credits);
-      };
       updateTradingPairsMetrics();
-      is_initializing := false;
-      is_initialized := true;
       #Ok(getState());
     } catch (_) {
+      #Err(#UnknownError);
+    } finally {
       is_initializing := false;
-      return #Err(#UnknownError);
     };
   };
 
@@ -172,62 +140,20 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     supported_tokens : [Principal];
   };
 
-  public query func http_request(req : HTTP.HttpRequest) : async HTTP.HttpResponse {
-    let ?path = Text.split(req.url, #char '?').next() else return HTTP.render400();
-    switch (req.method, path, is_initialized) {
-      case ("GET", "/metrics", true) metrics.renderExposition("canister=\"" # PT.shortName(self) # "\"") |> HTTP.renderPlainText(_);
-      case (_) HTTP.render400();
-    };
-  };
-
-  system func preupgrade() {
-    Debug.print("Preupgrade");
-    if (is_initialized) {
-      tradingPairsDataV4 := tradingPairs.share();
-    };
-    stableAdminsMap := adminsMap.share();
-  };
+  system func preupgrade() {};
 
   system func postupgrade() {
     Debug.print("Postupgrade");
-    ignore Timer.setTimer<system>(
-      #seconds(0),
-      func() : async () {
-        Debug.print("Init fired");
-        ignore await init();
-        if (is_running) {
-          runTimer<system>();
-        };
-      },
-    );
-  };
-
-  public query func listAdmins() : async [Principal] = async adminsMap.entries()
-  |> Iter.map<(Principal, ()), Principal>(_, func((p, _)) = p)
-  |> Iter.toArray(_);
-
-  private func assertAdminAccess(principal : Principal) : async* () {
-    if (adminsMap.get(principal) == null) {
-      throw Error.reject("No Access for this principal " # Principal.toText(principal));
+    tradingPairs.replayTransactionHistoryLock := false;
+    updateTradingPairsMetrics();
+    if (is_running) {
+      runTimer<system>();
     };
-  };
-
-  public shared ({ caller }) func addAdmin(principal : Principal) : async () {
-    await* assertAdminAccess(caller);
-    adminsMap.put(principal, ());
-  };
-
-  public shared ({ caller }) func removeAdmin(principal : Principal) : async () {
-    if (Principal.equal(principal, caller)) {
-      throw Error.reject("Cannot remove yourself from admins");
-    };
-    await* assertAdminAccess(caller);
-    adminsMap.delete(principal);
   };
 
   func addHistoryItem(pair : ?MarketMaker.MarketPairShared, bidOrder : ?MarketMaker.OrderInfo, askOrder : ?MarketMaker.OrderInfo, rate : ?Float, message : Text) : () {
     let historyItem = HistoryModule.new(pair, bidOrder, askOrder, rate, message);
-    Vec.add(historyV4, historyItem);
+    history.add(historyItem);
     Debug.print(HistoryModule.getText(historyItem));
   };
 
@@ -256,9 +182,9 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   };
 
   public query func getHistory(token : ?Principal, limit : Nat, skip : Nat) : async ([HistoryModule.HistoryItemTypeV4]) {
-    var iter = Vec.valsRev<HistoryModule.HistoryItemTypeV4>(historyV4);
+    var iter = history.reverseAvailableValues();
     switch (token) {
-      case (?t) iter := Iter.filter<HistoryModule.HistoryItemTypeV4>(iter, func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
+      case (?t) iter := iter.filter(func(x) = switch (x.pair) { case (?_pair) { _pair.base.principal == t }; case (null) { false } });
       case (null) {};
     };
     U.sliceIter(iter, limit, skip);
@@ -273,17 +199,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   public shared ({ caller }) func startBot(timer_interval : Nat) : async {
     #Ok : (BotState);
     #Err : ({
-      #NotInitializedError;
       #AlreadyStartedError;
     });
   } {
     await* assertAdminAccess(caller);
     assert not system_lock;
     Debug.print("Start bot");
-
-    if (is_initialized == false) {
-      return #Err(#NotInitializedError);
-    };
 
     if (is_running == true) {
       return #Err(#AlreadyStartedError);
@@ -307,17 +228,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
   public shared ({ caller }) func stopBot() : async {
     #Ok : (BotState);
     #Err : ({
-      #NotInitializedError;
       #AlreadyStopedError;
       #CancelOrdersError;
     });
   } {
     await* assertAdminAccess(caller);
     Debug.print("Stop bot");
-
-    if (is_initialized == false) {
-      return #Err(#NotInitializedError);
-    };
 
     if (is_running == false) {
       return #Err(#AlreadyStopedError);
@@ -362,7 +278,7 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
 
   public shared ({ caller }) func setQuoteBalance(baseSymbol : Text, balance : { #set : Nat; #inc : Nat; #dec : Nat }) : async Nat {
     await* assertAdminAccess(caller);
-    await* tradingPairs.setQuoteBalance(auction, baseSymbol, balance);
+    await* TradingPairsRegistry.setQuoteBalance(tradingPairs, auction, baseSymbol, balance);
   };
 
   public shared ({ caller }) func notify(token : ?Principal) : async () {
@@ -374,10 +290,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         ignore await* auction.notify(supported_tokens);
       };
     };
-    ignore await* tradingPairs.replayTransactionHistory(auction);
+    ignore await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
   };
 
-  var executionLock : Bool = false;
+  transient var executionLock : Bool = false;
 
   public shared ({ caller }) func executeMarketMaking() : async () {
     await* assertAdminAccess(caller);
@@ -392,12 +308,12 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
       let pairs = tradingPairs.getPairs();
       let rates = await* oracle.fetchRates(
         tradingPairs.quoteInfo().symbol,
-        pairs |> Array.map<MarketMaker.MarketPair, Text>(_, func(x) = x.base.symbol),
+        pairs.map<MarketMaker.MarketPair, Text>(func(x) = x.base.symbol),
       );
-      let sessionNumber = await* tradingPairs.replayTransactionHistory(auction);
+      let accountRevision = await* TradingPairsRegistry.replayTransactionHistory(tradingPairs, auction);
 
-      let pairsToProcess : Vec.Vector<MarketMaker.MarketPair> = Vec.new();
-      let ratesToProcess : Vec.Vector<Float> = Vec.new();
+      let pairsToProcess : List.List<MarketMaker.MarketPair> = List.empty();
+      let ratesToProcess : List.List<Float> = List.empty();
       for (i in pairs.keys()) {
         let market_pair = pairs[i];
         if (market_pair.base_credits == 0 or market_pair.quote_credits == 0 or U.upperResultToOption(rates[i]) == null) {
@@ -407,24 +323,24 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
               case (#Err(#ErrorGetRates(x))) addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, U.getErrorMessage(#RatesError(x)));
             };
           } else if (market_pair.base_credits == 0) {
-            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(market_pair.base.principal));
+            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # market_pair.base.principal.toText());
           } else if (market_pair.quote_credits == 0) {
-            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # Principal.toText(tradingPairs.quoteInfo().principal));
+            addHistoryItem(?MarketMaker.sharePair(market_pair), null, null, null, "Skip processing pair: empty credits for " # tradingPairs.quoteInfo().principal.toText());
           };
         } else {
-          Vec.add(pairsToProcess, market_pair);
-          Vec.add(ratesToProcess, U.requireUpperOk(rates[i]));
+          pairsToProcess.add(market_pair);
+          ratesToProcess.add(U.requireUpperOk(rates[i]));
         };
       };
-      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), Vec.toArray(pairsToProcess), Vec.toArray(ratesToProcess), auction, sessionNumber);
+      let execute_result = await* MarketMaker.execute(tradingPairs.quoteInfo(), pairsToProcess.toArray(), ratesToProcess.toArray(), auction, accountRevision);
 
       switch (execute_result) {
         case (#Ok results) {
           for (i in results.keys()) {
             let (bids, asks, rate) = results[i];
-            for (j in Iter.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
+            for (j in Nat.range(0, Nat.max(bids.size(), asks.size()) - 1)) {
               addHistoryItem(
-                ?MarketMaker.sharePair(Vec.get(pairsToProcess, i)),
+                ?MarketMaker.sharePair(pairsToProcess.at(i)),
                 if (j < bids.size()) { ?bids[j] } else { null },
                 if (j < asks.size()) { ?asks[j] } else { null },
                 ?rate,
@@ -457,10 +373,10 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
     assert not system_lock;
     system_lock := true;
     let qt = U.require(quote_token);
-    let src : Auction.Self = actor (Principal.toText(source_auction));
+    let src : Auction.Self = actor (source_auction.toText());
 
     func toSubaccount(p : Principal) : Blob {
-      let bytes = Blob.toArray(Principal.toBlob(p));
+      let bytes = p.toBlob().toArray();
       let size = bytes.size();
       assert size <= 29;
       Array.tabulate<Nat8>(
@@ -484,42 +400,39 @@ actor class MarketMakerBot(auction_be_ : Principal, oracle_be_ : Principal) = se
         [],
         { Auction.EMPTY_QUERY with credits = ?true },
       );
-      let calls : Vec.Vector<(Principal, async Auction.WithdrawResult, ?MarketMaker.MarketPair)> = Vec.new();
+      let calls : List.List<(Principal, async Auction.WithdrawResponse, ?MarketMaker.MarketPair)> = List.empty();
       try {
         for ((token, acc) in credits.vals()) {
-          Vec.add(
-            calls,
-            (
-              token,
-              src.icrc84_withdraw({
-                to = { owner = dest_auction; subaccount = ?destSubaccount };
-                amount = acc.available;
-                token;
-                expected_fee = null;
-              }),
-              tradingPairs.getPairByLedger(token),
-            ),
-          );
+          calls.add((
+            token,
+            src.icrc84_withdraw({
+              to = { owner = dest_auction; subaccount = ?destSubaccount };
+              amount = acc.available;
+              token;
+              expected_fee = null;
+            }),
+            tradingPairs.getPairByLedger(token),
+          ));
         };
       } catch (err) {
         Debug.print("migrate_auction_credits scheduling calls error: " # Error.message(err));
       };
-      for ((token, call, pair) in Vec.vals(calls)) {
+      for ((token, call, pair) in calls.values()) {
         try {
           switch (await call) {
             case (#Ok _) switch (pair) {
               case (?p) p.base_credits := 0;
-              case (null) if (Principal.equal(token, qt)) {
+              case (null) if (token.equal(qt)) {
                 for (p in tradingPairs.getPairs().vals()) {
                   p.quote_credits := 0;
                 };
                 tradingPairs.quoteReserve := 0;
               };
             };
-            case (#Err err) Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # debug_show err);
+            case (#Err err) Debug.print("migrate_auction_credits error for token " # token.toText() # ": " # debug_show err);
           };
         } catch (err) {
-          Debug.print("migrate_auction_credits error for token " # Principal.toText(token) # ": " # Error.message(err));
+          Debug.print("migrate_auction_credits error for token " # token.toText() # ": " # Error.message(err));
         };
       };
     } catch (err) {

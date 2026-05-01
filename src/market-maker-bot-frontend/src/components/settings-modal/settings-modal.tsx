@@ -55,7 +55,7 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
         return {
             strategy: [
                 {
-                    spread: "0.05",
+                    spread: "0.02",
                     spreadBias: "0.0",
                     weight: "1.0",
                 },
@@ -154,7 +154,7 @@ const SettingsModal = ({pair, isOpen, onClose}: SettingsModalProps) => {
                             color="primary"
                             onClick={() =>
                                 appendStrategy({
-                                    spread: "0.05",
+                                    spread: "0.02",
                                     spreadBias: "0.0",
                                     weight: "1.0",
                                 })

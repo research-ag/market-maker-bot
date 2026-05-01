@@ -4,11 +4,12 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import AssocList "mo:base/AssocList";
-import Iter "mo:base/Iter";
-import Nat "mo:base/Nat";
+import Iter "mo:core/Iter";
+import Map "mo:core/Map";
+import Nat "mo:core/Nat";
+import Order "mo:core/Order";
+
 import Prim "mo:prim";
-import Principal "mo:base/Principal";
 
 module {
   public type ExecutionError = {
@@ -23,7 +24,7 @@ module {
     #TooLowOrderError;
     #VolumeStepViolated : { baseVolumeStep : Nat };
     #PriceDigitsOverflow : { maxDigits : Nat };
-    #SessionNumberMismatch : Principal;
+    #AccountRevisionMismatch;
   };
 
   public func getErrorMessage(error : ExecutionError) : Text {
@@ -37,19 +38,19 @@ module {
       case (#UnknownAssetError) "Unknown asset error";
       case (#NoCreditError) "No credit error";
       case (#TooLowOrderError) "Too low order error";
-      case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # Nat.toText(baseVolumeStep);
-      case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # Nat.toText(maxDigits);
-      case (#SessionNumberMismatch p) "Session number mismatch for asset " # Principal.toText(p);
+      case (#VolumeStepViolated { baseVolumeStep }) "Volume step error. Step: " # baseVolumeStep.toText();
+      case (#PriceDigitsOverflow { maxDigits }) "Price digits overflow. Max digits: " # maxDigits.toText();
+      case (#AccountRevisionMismatch) "Account revision mismatch";
     };
   };
 
-  public func getByKeyOrDefault<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, default : K) : (K) {
-    let ?_value = AssocList.find<T, K>(list, key, equal) else return default;
+  public func getByKeyOrDefault<T, K>(list : Map.Map<T, K>, key : T, compare : (T, T) -> Order.Order, default : K) : (K) {
+    let ?_value = list.get(key) else return default;
     _value;
   };
 
-  public func getByKeyOrTrap<T, K>(list : AssocList.AssocList<T, K>, key : T, equal : (T, T) -> Bool, message : Text) : (K) {
-    let ?_value = AssocList.find<T, K>(list, key, equal) else Prim.trap(message);
+  public func getByKeyOrTrap<T, K>(list : Map.Map<T, K>, key : T, compare : (T, T) -> Order.Order, message : Text) : (K) {
+    let ?_value = list.get(key) else Prim.trap(message);
     _value;
   };
 

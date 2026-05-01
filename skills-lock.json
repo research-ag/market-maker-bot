@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "motoko-base-to-core-migration": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/base-core-migration/SKILL.md",
+      "computedHash": "df9179c7aa6668fd12a5cdbb25e4d5f5fa8994cc9dd4c34272580e0a172bf1c5"
+    },
+    "motoko-benchmarks-generation": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/benchmarks-generation/SKILL.md",
+      "computedHash": "3db115527ed46167da1c1bd8d1574937e71ab6bdff854952d897ebc977101254"
+    },
+    "motoko-compiler-warnings-fixes": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/fix-compiler-warnings/SKILL.md",
+      "computedHash": "a84c2a86910ef7377c70509dd7118479848fd69ad7bc497a5a0b5e19fcbe5342"
+    },
+    "motoko-core-code-improvements": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-improvements/SKILL.md",
+      "computedHash": "a85dc0be90ffe34a078e133bff63031b44d4b555cbee9d24cba1dce07c5c035d"
+    },
+    "motoko-doc-strings": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/doc-strings/SKILL.md",
+      "computedHash": "c6bcdac5a3973eff8baefb42da443d896ef7f220bdbf1af7ff635054791332c4"
+    },
+    "motoko-dot-notation-migration": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dot-notation-migration/SKILL.md",
+      "computedHash": "6ec669f5fa866459af7aba47eb532b2611e5bc96e489dbfef16e2c16a9892b24"
+    },
+    "motoko-general-style-guidelines": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/motoko-general-style-guidelines/SKILL.md",
+      "computedHash": "868da8a2691396ae08232214dbb23b752f3c7734de75c961f57de6d359ca9861"
+    },
+    "motoko-performance-optimizations": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/performance-optimizations/SKILL.md",
+      "computedHash": "2c554d66727319bc38d94150a33e4bfd2922dcf957efe68f12c9df08dc21f8f4"
+    }
+  }
+}

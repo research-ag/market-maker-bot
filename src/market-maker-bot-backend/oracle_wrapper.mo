@@ -4,22 +4,22 @@
 /// Main author: Dmitriy Panchenko
 /// Contributors: Timo Hanke
 
-import Array "mo:base/Array";
-import AssocList "mo:base/AssocList";
-import Debug "mo:base/Debug";
-import Error "mo:base/Error";
-import Float "mo:base/Float";
-import List "mo:base/List";
-import Nat "mo:base/Nat";
-import Nat32 "mo:base/Nat32";
-import Nat64 "mo:base/Nat64";
+import Array "mo:core/Array";
+import Debug "mo:core/Debug";
+import Error "mo:core/Error";
+import Float "mo:core/Float";
+import List "mo:core/List";
+import Map "mo:core/Map";
+import Nat "mo:core/Nat";
+import Nat32 "mo:core/Nat32";
+import Nat64 "mo:core/Nat64";
+import Principal "mo:core/Principal";
+import Text "mo:core/Text";
+import VarArray "mo:core/VarArray";
+
 import Prim "mo:prim";
-import Principal "mo:base/Principal";
-import Text "mo:base/Text";
 
-import Vec "mo:vector";
-
-import OracleDefinitions "./oracle_definitions";
+import OracleDefinitions "oracle_definitions";
 
 module {
 
@@ -28,24 +28,22 @@ module {
     // how many times rate for single base token considered to be valid.
     // In case of error response we can use previous successful response as soon as
     // error did not already happen CACHE_TTL times in a row
-    let CACHE_TTL = 1;
+    let CACHE_TTL = 2;
 
-    var ratesCache : AssocList.AssocList<Text, { rate : Float; var ttl : Nat }> = List.nil();
+    let ratesCache : Map.Map<Text, { rate : Float; var ttl : Nat }> = Map.empty();
     private func cacheRate(symbol : Text, rate : Float) {
-      let (upd, _) = AssocList.replace(ratesCache, symbol, Text.equal, ?{ rate; var ttl = CACHE_TTL });
-      ratesCache := upd;
+      ratesCache.add(symbol, { rate; var ttl = CACHE_TTL });
     };
     private func popCachedRate(symbol : Text) : ?Float {
-      let ?entry = AssocList.find(ratesCache, symbol, Text.equal) else return null;
+      let ?entry = ratesCache.get(symbol) else return null;
       entry.ttl -= 1;
       if (entry.ttl == 0) {
-        let (upd, _) = AssocList.replace(ratesCache, symbol, Text.equal, null);
-        ratesCache := upd;
+        ratesCache.remove(symbol);
       };
       ?entry.rate;
     };
 
-    let xrc : OracleDefinitions.Self = actor (Principal.toText(oracle_principal));
+    let xrc : OracleDefinitions.Self = actor (oracle_principal.toText());
 
     let neutriniteOracle : (
       actor {
@@ -60,8 +58,8 @@ module {
     ) = actor ("k2ic6-3yaaa-aaaao-a3u6a-cai");
 
     func calculateRate(rate : Nat64, decimals : Nat32) : Float {
-      let exponent : Float = Float.fromInt(Nat32.toNat(decimals));
-      Float.fromInt(Nat64.toNat(rate)) / Float.pow(10, exponent);
+      let exponent : Float = Float.fromInt(decimals.toNat());
+      rate.toNat().toFloat() / Float.pow(10, exponent);
     };
 
     public func fetchRates(quoteSymbol : Text, baseSymbols : [Text]) : async* [{
@@ -69,29 +67,29 @@ module {
       #Err : { #ErrorGetRates : Text };
     }] {
       Debug.print("Fetching rates..");
-      var res = Array.init<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(baseSymbols.size(), #Err(#ErrorGetRates("N/A")));
+      let res = VarArray.repeat<{ #Ok : Float; #Err : { #ErrorGetRates : Text } }>(#Err(#ErrorGetRates("N/A")), baseSymbols.size());
 
       // define call info
-      let xrcCalls : Vec.Vector<(i : Nat, async OracleDefinitions.GetExchangeRateResult)> = Vec.new();
+      let xrcCalls : List.List<(i : Nat, async OracleDefinitions.GetExchangeRateResult)> = List.empty();
 
-      let neutriniteSymbolPairs : Vec.Vector<(i : Nat, localSymbol : Text, remoteSymbol : Text)> = Vec.new();
+      let neutriniteSymbolPairs : List.List<(i : Nat, localSymbol : Text, remoteSymbol : Text)> = List.empty();
       var neutriniteCall : ?(async [((Nat, Nat), Text, Float)]) = null;
 
-      let metalPriceSymbolPairs : Vec.Vector<(i : Nat, localSymbol : Text, remoteSymbol : Text)> = Vec.new();
+      let metalPriceSymbolPairs : List.List<(i : Nat, localSymbol : Text, remoteSymbol : Text)> = List.empty();
       var metalPriceCall : ?(async [(Text, ?{ timestamp : Nat; value : Float })]) = null;
 
       // fill call info and schedule all cross-canister calls at once
       for (i in baseSymbols.keys()) {
         switch (baseSymbols[i]) {
-          // case "TCYCLES" Vec.add(neutriniteSymbolPairs, (i, "TCYCLES", "XTC/USD"));
-          case "GLDT" Vec.add(metalPriceSymbolPairs, (i, "GLDT", "USDXAU"));
-          case "BTC" Vec.add(metalPriceSymbolPairs, (i, "BTC", "USDBTC"));
-          case "ETH" Vec.add(metalPriceSymbolPairs, (i, "ETH", "USDETH"));
-          case "EURC" Vec.add(metalPriceSymbolPairs, (i, "EURC", "USDEUR"));
+          // case "TCYCLES" neutriniteSymbolPairs.add((i, "TCYCLES", "XTC/USD"));
+          case "GLDT" metalPriceSymbolPairs.add((i, "GLDT", "USDXAU"));
+          case "BTC" metalPriceSymbolPairs.add((i, "BTC", "USDBTC"));
+          case "ETH" metalPriceSymbolPairs.add((i, "ETH", "USDETH"));
+          case "EURC" metalPriceSymbolPairs.add((i, "EURC", "USDEUR"));
           case symbol {
             let (baseSymbol, baseClass) = switch (symbol) {
               case "TCYCLES" ("XDR", #FiatCurrency);
-              case x(x, #Cryptocurrency);
+              case x (x, #Cryptocurrency);
             };
             let request : OracleDefinitions.GetExchangeRateRequest = {
               timestamp = null;
@@ -105,38 +103,38 @@ module {
               };
             };
             try {
-              Vec.add(xrcCalls, (i, (with cycles = 10_000_000_000) xrc.get_exchange_rate(request)));
+              xrcCalls.add((i, (with cycles = 10_000_000_000) xrc.get_exchange_rate(request)));
             } catch (err) {
               res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
             };
           };
         };
       };
-      if (Vec.size(neutriniteSymbolPairs) > 0) {
+      if (neutriniteSymbolPairs.size() > 0) {
         try {
           neutriniteCall := ?(neutriniteOracle.get_latest());
         } catch (err) {
-          for ((i, _, _) in Vec.vals(neutriniteSymbolPairs)) {
+          for ((i, _, _) in neutriniteSymbolPairs.values()) {
             res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
           };
         };
       };
-      if (Vec.size(metalPriceSymbolPairs) > 0) {
+      if (metalPriceSymbolPairs.size() > 0) {
         try {
           metalPriceCall := ?(
             metalPriceApiOracle.queryRates(
-              Vec.toArray(metalPriceSymbolPairs) |> Array.map<(Nat, Text, remoteSymbol : Text), Text>(_, func((_, _, s)) = s)
+              metalPriceSymbolPairs.toArray().map<(Nat, Text, remoteSymbol : Text), Text>(func((_, _, s)) = s)
             )
           );
         } catch (err) {
-          for ((i, _, _) in Vec.vals(metalPriceSymbolPairs)) {
+          for ((i, _, _) in metalPriceSymbolPairs.values()) {
             res[i] := #Err(#ErrorGetRates("Schedule call error: " # Error.message(err)));
           };
         };
       };
 
       // actually await cross-canister calls
-      for ((i, call) in Vec.vals(xrcCalls)) {
+      for ((i, call) in xrcCalls.values()) {
         try {
           let response = await call;
           res[i] := switch (response) {
@@ -176,7 +174,7 @@ module {
         case (?call) {
           try {
             let results = await call;
-            for ((i, _, remoteSymbol) in Vec.vals(neutriniteSymbolPairs)) {
+            for ((i, _, remoteSymbol) in neutriniteSymbolPairs.values()) {
               var rate : Float = 0;
               label l for (x in results.vals()) {
                 if (x.1 == remoteSymbol) {
@@ -192,7 +190,7 @@ module {
               };
             };
           } catch (err) {
-            for ((i, _, _) in Vec.vals(neutriniteSymbolPairs)) {
+            for ((i, _, _) in neutriniteSymbolPairs.values()) {
               res[i] := #Err(#ErrorGetRates("Call error: " # Error.message(err)));
             };
           };
@@ -204,13 +202,13 @@ module {
           try {
             let results = await call;
             // ignore rates, synchronised more than 6 hours ago
-            let minSyncTimestamp = Nat64.toNat(Prim.time() / 1_000_000_000 - 6 * 60 * 60);
-            for (((i, localSymbol, remoteSymbol), idx) in Vec.items(metalPriceSymbolPairs)) {
+            let minSyncTimestamp = (Prim.time() / 1_000_000_000 - 6 * 60 * 60).toNat();
+            for ((idx, (i, localSymbol, remoteSymbol)) in metalPriceSymbolPairs.enumerate()) {
               res[i] := switch (results[idx].1) {
                 case (null) #Err(#ErrorGetRates("Metal Price API did not provide key " # remoteSymbol));
                 case (?{ value; timestamp }) {
                   if (timestamp < minSyncTimestamp) {
-                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # Nat.toText(timestamp)));
+                    #Err(#ErrorGetRates("Metal Price API rate is too old: " # timestamp.toText()));
                   } else {
                     let rate = if (localSymbol == "GLDT") {
                       value / 3110.35;
@@ -224,7 +222,7 @@ module {
               };
             };
           } catch (err) {
-            for ((i, _, _) in Vec.vals(metalPriceSymbolPairs)) {
+            for ((i, _, _) in metalPriceSymbolPairs.values()) {
               res[i] := #Err(#ErrorGetRates("Call error: " # Error.message(err)));
             };
           };
@@ -247,7 +245,7 @@ module {
         };
       };
       Debug.print("Rates fetched: " # debug_show res);
-      Array.freeze(res);
+      res.toArray();
     };
   };
 };
