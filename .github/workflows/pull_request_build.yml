@@ -18,7 +18,7 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: install mops
-        run: yarn global add ic-mops
+        run: npm i ic-mops -g
 
       - name: install mops packages
         run: mops install
