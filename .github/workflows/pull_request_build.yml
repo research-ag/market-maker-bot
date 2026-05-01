@@ -13,12 +13,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: install npm packages
+      - name: install yarn packages
         working-directory: ./src/market-maker-bot-frontend
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: install mops
-        run: npm i ic-mops -g
+        run: yarn global add ic-mops
 
       - name: install mops packages
         run: mops install
