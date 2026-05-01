@@ -126,11 +126,11 @@ persistent actor class ActivityBot(activityBotMode : Nat, auction_be_ : ?Princip
       quote_token := ?qp;
       supported_tokens := sp;
       updateTradingPairsMetrics();
-      is_initializing := false;
       #Ok(getState());
     } catch (_) {
+      #Err(#UnknownError);
+    } finally {
       is_initializing := false;
-      return #Err(#UnknownError);
     };
   };
 

@@ -73,7 +73,7 @@ module {
       for ((token, bids, asks) in orders.vals()) {
         for (ask in asks.vals()) {
           if (ask.amount > 0) {
-             placements.add(#ask(token, orderBookType, ask.amount, ask.price));
+            placements.add(#ask(token, orderBookType, ask.amount, ask.price));
           };
         };
         for (bid in bids.vals()) {
@@ -97,8 +97,8 @@ module {
               };
             };
             case (#cancellation(e)) #Err(#cancellation(e));
-            case (#AccountRevisionMismatch(x)) #Err(#AccountRevisionMismatch(x));
-            case (#UnknownPrincipal(x)) #Err(#UnknownPrincipal(x));
+            case (#AccountRevisionMismatch) #Err(#AccountRevisionMismatch);
+            case (#UnknownPrincipal) #Err(#UnknownPrincipal);
             case (#UnknownError(x)) #Err(#UnknownError(x));
           };
         };
